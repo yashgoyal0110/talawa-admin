@@ -12,6 +12,9 @@ import { searchInputRestrictions } from './search-input.js';
 import preferCrudModalTemplate from './prefer-crud-modal-template.js';
 import { modalStateRestrictions } from './modal-state.js';
 import { nativeButtonRestrictions } from './native-button.js';
+import enforceScreenRoute from './enforce-screen-route.js';
+import enforceAppRoute from './enforce-app-route.js';
+
 
 export {
   restrictedImports,
@@ -23,4 +26,6 @@ export {
   preferCrudModalTemplate,
   modalStateRestrictions,
   nativeButtonRestrictions,
+  enforceScreenRoute,
+  enforceAppRoute,
 };
