@@ -54,4 +54,17 @@ const enforceAppRoute = {
   },
 };
 
+export const enforceAppRouteConfig = {
+  plugins: {
+    'enforce-app-route': {
+      rules: {
+        enforce: enforceAppRoute,
+      },
+    },
+  },
+  rules: {
+    'enforce-app-route/enforce': 'error',
+  },
+};
+
 export default enforceAppRoute;

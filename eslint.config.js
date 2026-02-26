@@ -13,7 +13,7 @@ import {
 } from './scripts/eslint/config/special.js';
 
 import { screenRouteConfig } from './scripts/eslint/rules/enforce-screen-route.js';
-import enforceAppRoute  from './scripts/eslint/rules/enforce-app-route.js';
+import { enforceAppRouteConfig } from './scripts/eslint/rules/enforce-app-route.js';
 
 export default [
   {
@@ -49,5 +49,5 @@ export default [
   testConfig,
   preferCrudModalTemplateConfig,
   screenRouteConfig,
-  enforceAppRoute,
+  enforceAppRouteConfig,
 ];
