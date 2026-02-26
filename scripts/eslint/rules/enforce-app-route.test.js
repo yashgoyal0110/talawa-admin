@@ -23,6 +23,32 @@ ruleTester.run('enforce-app-route', rule, {
       `,
     },
 
+{
+  filename: 'src/App.tsx',
+  code: `
+    function App() {
+      return <Route exact />;
+    }
+  `,
+},
+
+{
+  filename: 'src/App.tsx',
+  code: `
+    function App() {
+      return <Route path={\`/admin/\${section}\`} />;
+    }
+  `,
+},
+
+{
+  code: `
+    function App() {
+      return <Route path="/admin" />;
+    }
+  `,
+},
+
     // Valid nested admin route
     {
       filename: 'src/App.tsx',
