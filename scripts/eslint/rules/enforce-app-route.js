@@ -1,4 +1,10 @@
 const ALLOWED_PREFIXES = ['/admin', '/user', '/auth'];
+const ALLOWED_EXACT = ['/', '/register', '/forgotPassword', '/verify-email'];
+const ALLOWED_PATTERNS = ['^/event/invitation(?:/|$)'];
+
+const allowedPatternRegexes = ALLOWED_PATTERNS.map(
+  (pattern) => new RegExp(pattern),
+);
 
 const enforceAppRoute = {
   meta: {
@@ -36,19 +42,28 @@ const enforceAppRoute = {
 
         const route = value.value;
 
-        const isValid = ALLOWED_PREFIXES.some(
-          (prefix) =>
-            route === prefix || route.startsWith(prefix + '/'),
-        );
+        if (route === '*') return;
 
-        if (!isValid) {
-          context.report({
-            node: value,
-            message: `Route must start with one of: ${ALLOWED_PREFIXES.join(
-              ', ',
-            )}`,
-          });
-        }
+        if (ALLOWED_EXACT.includes(route)) return;
+
+        const matchesPrefix = ALLOWED_PREFIXES.some(
+          (prefix) => route === prefix || route.startsWith(prefix + '/'),
+        );
+        if (matchesPrefix) return;
+        
+        const matchesPattern = allowedPatternRegexes.some((regex) =>
+          regex.test(route),
+        );
+        if (matchesPattern) return;
+
+        context.report({
+          node: value,
+          message: `Route "${route}" is not allowed. Routes must: start with one of [${ALLOWED_PREFIXES.join(
+            ', ',
+          )}], exactly match one of [${ALLOWED_EXACT.join(
+            ', ',
+          )}], match an allowed pattern, or be the wildcard "*".`,
+        });
       },
     };
   },
