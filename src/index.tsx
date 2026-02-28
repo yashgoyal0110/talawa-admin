@@ -35,6 +35,7 @@ import { setContext } from '@apollo/client/link/context';
 import './assets/css/scrollStyles.css';
 import './style/app-fixed.module.css';
 import { NotificationToast } from 'shared-components/NotificationToast/NotificationToast';
+const AUTH_OPERATORS = ['SignIn', 'SignUp', 'RefreshToken', 'Logout'];
 const theme = createTheme({
   palette: {
     primary: {
@@ -89,8 +90,7 @@ const errorLink = onError(
 
         // Skip token refresh logic for authentication operations (login/signup/logout)
         const operationName = operation.operationName;
-        const authOperations = ['SignIn', 'SignUp', 'RefreshToken', 'Logout'];
-        if (authOperations.includes(operationName)) {
+        if (AUTH_OPERATORS.includes(operationName)) {
           continue;
         }
 
@@ -159,8 +159,7 @@ const errorLink = onError(
 
     if (networkError) {
       const operationName = operation.operationName;
-      const authOperations = ['SignIn', 'SignUp', 'RefreshToken', 'Logout'];
-      if (authOperations.includes(operationName)) {
+      if (AUTH_OPERATORS.includes(operationName)) {
         return;
       }
 
