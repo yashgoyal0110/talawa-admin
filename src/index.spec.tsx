@@ -1043,5 +1043,103 @@ describe('Apollo Client Configuration', () => {
         },
       );
     });
+    it('should not show API unavailable toast for SignIn network errors', async () => {
+      await import('./index');
+
+      const signInOperation = createOperation('SignIn', 'query');
+
+      const networkError = new Error('failed to fetch');
+      onErrorCallback({
+        networkError,
+        operation: signInOperation,
+        forward: vi.fn(),
+      });
+
+      expect(NotificationToast.error).not.toHaveBeenCalled();
+    });
+
+    it('should not show API unavailable toast for SignUp network errors', async () => {
+      await import('./index');
+
+      const signUpOperation = createOperation('SignUp', 'query');
+
+      const networkError = new Error('failed to fetch');
+      onErrorCallback({
+        networkError,
+        operation: signUpOperation,
+        forward: vi.fn(),
+      });
+
+      expect(NotificationToast.error).not.toHaveBeenCalled();
+    });
+
+    it('should not show API unavailable toast for RefreshToken network errors', async () => {
+      await import('./index');
+
+      const refreshTokenOperation = createOperation('RefreshToken', 'query');
+
+      const networkError = new Error('failed to fetch');
+      onErrorCallback({
+        networkError,
+        operation: refreshTokenOperation,
+        forward: vi.fn(),
+      });
+
+      expect(NotificationToast.error).not.toHaveBeenCalled();
+    });
+
+    it('should not show API unavailable toast for Logout network errors', async () => {
+      await import('./index');
+
+      const logoutOperation = createOperation('Logout', 'query');
+
+      const networkError = new Error('failed to fetch');
+      onErrorCallback({
+        networkError,
+        operation: logoutOperation,
+        forward: vi.fn(),
+      });
+
+      expect(NotificationToast.error).not.toHaveBeenCalled();
+    });
+
+    it('should not show API unavailable toast for SignIn 5xx errors', async () => {
+      await import('./index');
+
+      const signInOperation = createOperation('SignIn', 'query');
+
+      const serverError = new Error(
+        'Response not successful: Received status code 500',
+      ) as Error & { statusCode?: number };
+      serverError.statusCode = 500;
+
+      onErrorCallback({
+        networkError: serverError,
+        operation: signInOperation,
+        forward: vi.fn(),
+      });
+
+      // Even though it's a 5xx error, auth operations should be skipped
+      expect(NotificationToast.error).not.toHaveBeenCalled();
+    });
+
+    it('should still show API unavailable toast for non-auth 5xx network errors', async () => {
+      await import('./index');
+
+      // Non-auth operation should still trigger toast (existing behaviour unchanged)
+      const queryOperation = createOperation('GetUserProfile', 'query');
+
+      const serverError = new Error('failed to fetch');
+      onErrorCallback({
+        networkError: serverError,
+        operation: queryOperation,
+        forward: vi.fn(),
+      });
+
+      expect(NotificationToast.error).toHaveBeenCalledWith(
+        { key: 'talawaApiUnavailable', namespace: 'errors' },
+        { toastId: 'apiServer' },
+      );
+    });
   });
 });
