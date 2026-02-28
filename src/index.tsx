@@ -158,6 +158,12 @@ const errorLink = onError(
     }
 
     if (networkError) {
+      const operationName = operation.operationName;
+      const authOperations = ['SignIn', 'SignUp', 'RefreshToken', 'Logout'];
+      if (authOperations.includes(operationName)) {
+        return;
+      }
+
       const definition = getMainDefinition(operation.query);
       const isSubscriptionOperation =
         definition.kind === 'OperationDefinition' &&
