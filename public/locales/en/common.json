@@ -129,8 +129,10 @@
   "assignedTo": "Assigned to",
   "eventType": "Event Type",
   "overview": "Overview",
+  "security": "Security",
   "events": "Events",
   "tags": "Tags",
+  "viewSubTagsOf": "View subtags of {{tagName}}",
   "toggleOptions": "Toggle options",
   "filterAndSortOptions": "Filter and sort options",
   "clear": "Clear",
@@ -320,5 +322,6 @@
   "networkError": "Network error",
   "organizationCard": {
     "card_aria": "Organization card"
-  }
+  },
+  "oauthSectionAriaLabel": "OAuth login options"
 }

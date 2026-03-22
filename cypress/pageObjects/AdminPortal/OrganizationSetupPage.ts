@@ -26,7 +26,7 @@ export class OrganizationSetupPage extends BasePage<OrganizationSetupPage> {
     'modalOrganizationAddressLine1';
   private readonly organizationAddressLine2Input =
     'modalOrganizationAddressLine2';
-  private readonly submitOrganizationFormButton = 'submitOrganizationForm';
+  private readonly submitOrganizationFormButton = 'modal-submit-btn';
   private readonly pluginNotificationModal = 'pluginNotificationModal';
   private readonly closePluginNotificationButton = 'enableEverythingForm';
   private readonly goToStoreLink = 'goToStore';
@@ -170,7 +170,11 @@ export class OrganizationSetupPage extends BasePage<OrganizationSetupPage> {
       .contains(name, { timeout })
       .closest(`[data-cy="${this.organizationCardContainer}"]`)
       .find(`[data-cy="${this.organizationManageButton}"]`, { timeout })
-      .should('be.visible')
+      .should('be.visible');
+    this.byDataCy(this.organizationCardContainer, timeout)
+      .contains(name, { timeout })
+      .closest(`[data-cy="${this.organizationCardContainer}"]`)
+      .find(`[data-cy="${this.organizationManageButton}"]`, { timeout })
       .click();
     this.assertUrlMatch(/\/admin\/orgdash\/[^/?#]+/, timeout);
     return this;

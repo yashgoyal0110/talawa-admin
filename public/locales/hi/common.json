@@ -212,6 +212,7 @@
   "enterCityName": "शहर का नाम दर्ज करें",
   "enterStateName": "राज्य का नाम दर्ज करें",
   "select": "चुनें",
+  "security": "सुरक्षा",
   "selectAsYourCountry": "{{country}} को अपने देश के रूप में चुनें",
   "selectACountry": "एक देश चुनें",
   "passwordLengthRequirement": "पासवर्ड कम से कम {{length}} अक्षरों का होना चाहिए।",
@@ -243,6 +244,7 @@
   "nextPage": "अगला पृष्ठ",
   "pageNumber": "पृष्ठ {{page}}",
   "tags": "टैग",
+  "viewSubTagsOf": "{{tagName}} के उप-टैग देखें",
   "loadMoreItems": "और चीज़ें लोड करें",
   "loadMore": "और लोड करें",
   "loadOlderMessages": "पुराने संदेश लोड करें",
@@ -320,5 +322,6 @@
   "networkError": "नेटवर्क त्रुटि",
   "organizationCard": {
     "card_aria": "संस्था कार्ड"
-  }
+  },
+  "oauthSectionAriaLabel": "OAuth लॉगिन विकल्प"
 }

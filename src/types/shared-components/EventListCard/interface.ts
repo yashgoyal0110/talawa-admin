@@ -1,13 +1,12 @@
 import type { InterfaceEvent } from 'types/Event/interface';
 import type { InterfaceRecurrenceRule } from 'utils/recurrenceUtils/recurrenceTypes';
-import type { TFunction } from 'i18next';
 
 /**
  * Event list card props extending InterfaceEvent.
  * @remarks refetchEvents is optional and triggers a refresh when provided.
  */
 export interface InterfaceEventListCard extends InterfaceEvent {
-  refetchEvents?: () => void;
+  refetchEvents?: () => void | Promise<void>;
 }
 
 /**
@@ -22,9 +21,6 @@ export interface InterfaceEventListCardModalsProps {
   eventListCardProps: InterfaceEventListCard;
   eventModalIsOpen: boolean;
   hideViewModal: () => void;
-  // Use TFunction to match expected types and avoid $TFunctionBrand errors
-  t: TFunction<'translation', undefined>;
-  tCommon: TFunction<'translation', undefined>;
 }
 
 /**
@@ -41,6 +37,8 @@ export interface InterfaceEventUpdateInput {
   allDay?: boolean;
   startAt?: string;
   endAt?: string;
+  startDate?: string;
+  endDate?: string;
   /**
    * Recurrence rule for the event.
    * This field is used for updating the recurrence pattern.
@@ -74,9 +72,8 @@ export interface InterfaceUpdateEventHandlerProps {
   recurrence: InterfaceRecurrenceRule | null;
   updateOption: 'single' | 'following' | 'entireSeries';
   hasRecurrenceChanged?: boolean;
-  t: TFunction<'translation', undefined>;
   hideViewModal: () => void;
   eventUpdateModalIsOpen: boolean;
   closeUpdateModal: () => void;
-  refetchEvents?: () => void;
+  refetchEvents?: () => void | Promise<void>;
 }

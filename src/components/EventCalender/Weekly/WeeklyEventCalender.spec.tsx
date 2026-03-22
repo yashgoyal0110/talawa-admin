@@ -243,14 +243,23 @@ describe('WeeklyEventCalender Component', () => {
       },
     ];
 
-    // Ensure user is NOT a member
+    // Org has members, but user2 is not in the list (so not a member)
     const nonMemberOrgData: InterfaceIOrgList = {
       ...mockOrgData,
       members: {
-        edges: [],
+        edges: [
+          {
+            node: {
+              id: 'otherUser',
+              name: 'Other User',
+              emailAddress: 'other@example.com',
+            },
+            cursor: 'cursor1',
+          },
+        ],
         pageInfo: {
           hasNextPage: false,
-          endCursor: '',
+          endCursor: 'cursor1',
         },
       },
     };
@@ -259,11 +268,11 @@ describe('WeeklyEventCalender Component', () => {
       eventData: privateEventData,
       orgData: nonMemberOrgData,
       userRole: UserRole.REGULAR, // Regular user
-      userId: 'user2', // Not 'user1' (member) or 'admin1'
+      userId: 'user2', // Not in members list
       currentDate: today,
     });
 
-    // Should not see private event
+    // Should not see private event when user is not an org member
     expect(screen.queryByText('Private Event')).not.toBeInTheDocument();
   });
 
@@ -621,6 +630,217 @@ describe('WeeklyEventCalender Component', () => {
     });
 
     expect(screen.getAllByText('Multi-Day Event').length).toBeGreaterThan(0);
+  });
+
+  it('does not render all-day events when startDate is missing', () => {
+    const invalidAllDayEvent: InterfaceEvent[] = [
+      {
+        ...mockEventData[0],
+        id: 'all-day-missing-start',
+        name: 'All Day Missing Start',
+        allDay: true,
+        startDate: undefined,
+        endDate: dayjs(today)
+          .startOf('week')
+          .add(2, 'day')
+          .format('YYYY-MM-DD'),
+        startAt: null,
+        endAt: null,
+      },
+    ];
+
+    renderComponent({
+      eventData: invalidAllDayEvent,
+      refetchEvents: mockRefetchEvents,
+      orgData: mockOrgData,
+      userRole: UserRole.ADMINISTRATOR,
+      userId: 'admin1',
+      currentDate: today,
+    });
+
+    expect(screen.queryByText('All Day Missing Start')).not.toBeInTheDocument();
+  });
+
+  it('does not render timed events when startAt is missing', () => {
+    const timedEventMissingStartAt: InterfaceEvent[] = [
+      {
+        ...mockEventData[0],
+        id: 'timed-missing-start-at',
+        name: 'Timed Missing StartAt',
+        allDay: false,
+        startAt: null,
+        endAt: dayjs(today)
+          .startOf('week')
+          .add(2, 'day')
+          .hour(12)
+          .minute(0)
+          .second(0)
+          .utc()
+          .toISOString(),
+      },
+    ];
+
+    renderComponent({
+      eventData: timedEventMissingStartAt,
+      refetchEvents: mockRefetchEvents,
+      orgData: mockOrgData,
+      userRole: UserRole.ADMINISTRATOR,
+      userId: 'admin1',
+      currentDate: today,
+    });
+
+    expect(screen.queryByText('Timed Missing StartAt')).not.toBeInTheDocument();
+  });
+
+  it('does not render timed events when endAt is missing', () => {
+    const timedEventMissingEndAt: InterfaceEvent[] = [
+      {
+        ...mockEventData[0],
+        id: 'timed-missing-end-at',
+        name: 'Timed Missing EndAt',
+        allDay: false,
+        startAt: dayjs(today)
+          .startOf('week')
+          .add(2, 'day')
+          .hour(10)
+          .minute(0)
+          .second(0)
+          .utc()
+          .toISOString(),
+        endAt: null,
+      },
+    ];
+
+    renderComponent({
+      eventData: timedEventMissingEndAt,
+      refetchEvents: mockRefetchEvents,
+      orgData: mockOrgData,
+      userRole: UserRole.ADMINISTRATOR,
+      userId: 'admin1',
+      currentDate: today,
+    });
+
+    expect(screen.queryByText('Timed Missing EndAt')).not.toBeInTheDocument();
+  });
+
+  it('short-circuits timed filtering before UTC parsing when startAt or endAt is missing', () => {
+    const utcSpy = vi.spyOn(dayjs, 'utc');
+
+    const timedEventsMissingBounds: InterfaceEvent[] = [
+      {
+        ...mockEventData[0],
+        id: 'timed-missing-start-bound',
+        name: 'Timed Missing Start Bound',
+        allDay: false,
+        startAt: null,
+        endAt: dayjs(today)
+          .startOf('week')
+          .add(2, 'day')
+          .hour(12)
+          .minute(0)
+          .second(0)
+          .utc()
+          .toISOString(),
+      },
+      {
+        ...mockEventData[0],
+        id: 'timed-missing-end-bound',
+        name: 'Timed Missing End Bound',
+        allDay: false,
+        startAt: dayjs(today)
+          .startOf('week')
+          .add(2, 'day')
+          .hour(10)
+          .minute(0)
+          .second(0)
+          .utc()
+          .toISOString(),
+        endAt: null,
+      },
+    ];
+
+    renderComponent({
+      eventData: timedEventsMissingBounds,
+      refetchEvents: mockRefetchEvents,
+      orgData: mockOrgData,
+      userRole: UserRole.ADMINISTRATOR,
+      userId: 'admin1',
+      currentDate: today,
+    });
+
+    expect(
+      screen.queryByText('Timed Missing Start Bound'),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Timed Missing End Bound'),
+    ).not.toBeInTheDocument();
+    expect(utcSpy).not.toHaveBeenCalled();
+  });
+
+  it('renders an all-day event on exactly one day when endDate is not provided', () => {
+    const allDayDate = dayjs(today)
+      .startOf('week')
+      .add(3, 'day')
+      .format('YYYY-MM-DD');
+
+    const singleDayAllDayEvent: InterfaceEvent[] = [
+      {
+        ...mockEventData[0],
+        id: 'all-day-single-day',
+        name: 'Single Day All Day',
+        allDay: true,
+        startDate: allDayDate,
+        endDate: undefined,
+        startAt: null,
+        endAt: null,
+      },
+    ];
+
+    renderComponent({
+      eventData: singleDayAllDayEvent,
+      refetchEvents: mockRefetchEvents,
+      orgData: mockOrgData,
+      userRole: UserRole.ADMINISTRATOR,
+      userId: 'admin1',
+      currentDate: today,
+    });
+
+    expect(screen.getAllByText('Single Day All Day')).toHaveLength(1);
+  });
+
+  it('renders all-day events across startDate to exclusive endDate range', () => {
+    const rangeStart = dayjs(today)
+      .startOf('week')
+      .add(1, 'day')
+      .format('YYYY-MM-DD');
+    const rangeEnd = dayjs(today)
+      .startOf('week')
+      .add(3, 'day')
+      .format('YYYY-MM-DD');
+
+    const rangedAllDayEvent: InterfaceEvent[] = [
+      {
+        ...mockEventData[0],
+        id: 'all-day-range',
+        name: 'Range All Day',
+        allDay: true,
+        startDate: rangeStart,
+        endDate: rangeEnd,
+        startAt: null,
+        endAt: null,
+      },
+    ];
+
+    renderComponent({
+      eventData: rangedAllDayEvent,
+      refetchEvents: mockRefetchEvents,
+      orgData: mockOrgData,
+      userRole: UserRole.ADMINISTRATOR,
+      userId: 'admin1',
+      currentDate: today,
+    });
+
+    expect(screen.getAllByText('Range All Day')).toHaveLength(2);
   });
 
   // ── Accessibility ────────────────────────────────────────────────────────

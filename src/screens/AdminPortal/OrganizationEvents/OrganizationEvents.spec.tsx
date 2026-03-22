@@ -105,7 +105,10 @@ Object.defineProperty(window, 'location', {
   },
 });
 
-const defaultLink = new StaticMockLink(MOCKS, true);
+const defaultLink = new StaticMockLink(
+  MOCKS.map((mock) => ({ ...mock, variableMatcher: () => true })),
+  true,
+);
 
 async function wait(ms = 0): Promise<void> {
   await act(
@@ -201,6 +204,30 @@ vi.mock('./CreateEventModal', () => ({
         >
           Create Event Success
         </button>
+      </div>
+    );
+  },
+}));
+
+vi.mock('components/EventCalender/Monthly/EventCalender', () => ({
+  __esModule: true,
+  default: ({
+    eventData,
+    onMonthChange,
+  }: {
+    eventData?: unknown[];
+    onMonthChange?: (month: number, year: number) => void;
+  }) => {
+    return (
+      <div>
+        <button
+          type="button"
+          data-testid="nextmonthordate"
+          onClick={() => onMonthChange?.(1, 2023)}
+        />
+        <pre data-testid="event-data-json">
+          {JSON.stringify(eventData ?? [])}
+        </pre>
       </div>
     );
   },
@@ -548,6 +575,88 @@ describe('Organisation Events Page', () => {
     ).toBe(false);
   });
 
+  test('rate-limit eventDataError with "rate limit" message is silently suppressed', async () => {
+    const mockWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const rateLimitLink = new StaticMockLink(
+      [
+        {
+          request: {
+            query: GET_ORGANIZATION_EVENTS_PG,
+            variables: buildEventsVariables(),
+          },
+          variableMatcher: () => true,
+          error: new Error('Rate limit exceeded'),
+        },
+        {
+          request: {
+            query: GET_ORGANIZATION_DATA_PG,
+            variables: buildOrgVariables(),
+          },
+          result: {
+            data: {
+              organization: { id: '1', name: 'Org' },
+            },
+          },
+        },
+      ],
+      true,
+    );
+
+    renderWithLink(rateLimitLink);
+    await wait();
+    await waitFor(() =>
+      expect(screen.getByTestId('createEventModalBtn')).toBeInTheDocument(),
+    );
+
+    expect(window.location.pathname).toBe('/admin/orglist');
+    const messages = mockWarn.mock.calls.map((args) => args.join(' '));
+    expect(messages.some((msg) => msg.includes('Non-critical error'))).toBe(
+      false,
+    );
+  });
+
+  test('rate-limit eventDataError with "Please try again later" is silently suppressed', async () => {
+    const mockWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const rateLimitLink = new StaticMockLink(
+      [
+        {
+          request: {
+            query: GET_ORGANIZATION_EVENTS_PG,
+            variables: buildEventsVariables(),
+          },
+          variableMatcher: () => true,
+          error: new Error('Please try again later'),
+        },
+        {
+          request: {
+            query: GET_ORGANIZATION_DATA_PG,
+            variables: buildOrgVariables(),
+          },
+          result: {
+            data: {
+              organization: { id: '1', name: 'Org' },
+            },
+          },
+        },
+      ],
+      true,
+    );
+
+    renderWithLink(rateLimitLink);
+    await wait();
+    await waitFor(() =>
+      expect(screen.getByTestId('createEventModalBtn')).toBeInTheDocument(),
+    );
+
+    expect(window.location.pathname).toBe('/admin/orglist');
+    const messages = mockWarn.mock.calls.map((args) => args.join(' '));
+    expect(messages.some((msg) => msg.includes('Non-critical error'))).toBe(
+      false,
+    );
+  });
+
   test('non-rate-limit eventDataError logs warning', async () => {
     const mockWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
@@ -692,6 +801,79 @@ describe('Organisation Events Page', () => {
     );
 
     renderWithLink(emptyEventsLink);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('createEventModalBtn')).toBeInTheDocument(),
+    );
+  });
+
+  test('normalizes event data with null description, null location, and allDay true', async () => {
+    const eventDay = dayjs().add(30, 'days').startOf('day');
+    const startAt = eventDay.toISOString();
+    const endAt = eventDay.endOf('day').toISOString();
+
+    const mappingCoverageLink = new StaticMockLink(
+      [
+        {
+          request: {
+            query: GET_ORGANIZATION_EVENTS_PG,
+            variables: buildEventsVariables(),
+          },
+          variableMatcher: () => true,
+          result: {
+            data: {
+              organization: {
+                events: {
+                  edges: [
+                    {
+                      cursor: 'cursor1',
+                      node: {
+                        id: '1',
+                        name: 'All-Day Null Fields Event',
+                        description: null,
+                        startAt,
+                        endAt,
+                        allDay: true,
+                        location: null,
+                        isPublic: true,
+                        isRegisterable: true,
+                        isRecurringEventTemplate: false,
+                        baseEvent: null,
+                        sequenceNumber: null,
+                        totalCount: null,
+                        hasExceptions: false,
+                        progressLabel: null,
+                        recurrenceDescription: null,
+                        recurrenceRule: null,
+                        attachments: [],
+                        creator: { id: '1', name: 'Creator' },
+                        organization: { id: '1', name: 'Org' },
+                        createdAt: startAt,
+                        updatedAt: startAt,
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+        {
+          request: {
+            query: GET_ORGANIZATION_DATA_PG,
+            variables: buildOrgVariables(),
+          },
+          result: {
+            data: {
+              organization: { id: '1', name: 'Org' },
+            },
+          },
+        },
+      ],
+      true,
+    );
+
+    renderWithLink(mappingCoverageLink);
 
     await waitFor(() =>
       expect(screen.getByTestId('createEventModalBtn')).toBeInTheDocument(),
@@ -980,6 +1162,36 @@ describe('Organisation Events Page', () => {
     expect(searchInput.value).toBe('Conference Room');
   });
 
+  test('filter uses matchesDescription when search term matches only description', async () => {
+    renderWithLink(defaultLink);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('createEventModalBtn')).toBeInTheDocument(),
+    );
+
+    const searchInput = screen.getByTestId('searchEvent') as HTMLInputElement;
+    await userEvent.type(searchInput, 'This is a timed');
+    await userEvent.keyboard('{Enter}');
+    await wait(50);
+
+    expect(searchInput.value).toBe('This is a timed');
+  });
+
+  test('filter uses matchesLocation when search term matches only location', async () => {
+    renderWithLink(defaultLink);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('createEventModalBtn')).toBeInTheDocument(),
+    );
+
+    const searchInput = screen.getByTestId('searchEvent') as HTMLInputElement;
+    await userEvent.type(searchInput, 'Meeting Room B');
+    await userEvent.keyboard('{Enter}');
+    await wait(50);
+
+    expect(searchInput.value).toBe('Meeting Room B');
+  });
+
   test('returns all events when search term is empty', async () => {
     renderWithLink(defaultLink);
 
@@ -1103,6 +1315,157 @@ describe('Organisation Events Page', () => {
 
     // Verify current page breadcrumb (events) has aria-current
     expect(screen.getByText('events')).toHaveAttribute('aria-current', 'page');
+  });
+
+  test('correctly sets startTime and endTime for events', async () => {
+    renderWithLink(defaultLink);
+
+    await waitFor(() => {
+      const jsonPre = screen.getByTestId('event-data-json');
+      const parsedEvents = JSON.parse(jsonPre.textContent || '[]');
+
+      expect(parsedEvents).toBeInstanceOf(Array);
+      expect(parsedEvents.length).toBe(3);
+
+      // Event 1: Timed event (allDay: false)
+      expect(parsedEvents[0].startTime).toBe('09:00:00');
+      expect(parsedEvents[0].endTime).toBe('17:00:00');
+      expect(parsedEvents[0].allDay).toBe(false);
+
+      // Event 2: All day event (allDay: true)
+      expect(parsedEvents[1].startTime).toBeNull();
+      expect(parsedEvents[1].endTime).toBeNull();
+      expect(parsedEvents[1].allDay).toBe(true);
+
+      // Event 3: Timed event (allDay: false)
+      expect(parsedEvents[2].startTime).toBe('14:30:00');
+      expect(parsedEvents[2].endTime).toBe('16:30:00');
+      expect(parsedEvents[2].allDay).toBe(false);
+    });
+  });
+
+  test('maps non-all-day startTime/endTime from startAt/endAt and null when bounds are missing', async () => {
+    const timedStartAt = dayjs().add(15, 'day').hour(9).minute(5).toISOString();
+    const timedEndAt = dayjs().add(15, 'day').hour(11).minute(45).toISOString();
+
+    const branchEventsMock = {
+      request: {
+        query: GET_ORGANIZATION_EVENTS_PG,
+        variables: buildEventsVariables(),
+      },
+      result: {
+        data: {
+          organization: {
+            events: {
+              edges: [
+                {
+                  cursor: 'branch-cursor-1',
+                  node: {
+                    id: 'timed-with-bounds',
+                    name: 'Timed With Bounds',
+                    description: 'Has startAt/endAt',
+                    startAt: timedStartAt,
+                    endAt: timedEndAt,
+                    startDate: null,
+                    endDate: null,
+                    allDay: false,
+                    location: 'Room A',
+                    isPublic: true,
+                    isRegisterable: true,
+                    isInviteOnly: false,
+                    isRecurringEventTemplate: false,
+                    baseEvent: null,
+                    sequenceNumber: null,
+                    totalCount: null,
+                    hasExceptions: false,
+                    progressLabel: null,
+                    recurrenceDescription: null,
+                    recurrenceRule: null,
+                    attachments: [],
+                    creator: { id: '1', name: 'Creator User' },
+                    organization: { id: '1', name: 'Test Organization' },
+                    createdAt: dayjs().toISOString(),
+                    updatedAt: dayjs().toISOString(),
+                  },
+                },
+                {
+                  cursor: 'branch-cursor-2',
+                  node: {
+                    id: 'timed-missing-bounds',
+                    name: 'Timed Missing Bounds',
+                    description: 'Missing startAt/endAt',
+                    startAt: null,
+                    endAt: null,
+                    startDate: null,
+                    endDate: null,
+                    allDay: false,
+                    location: 'Room B',
+                    isPublic: true,
+                    isRegisterable: true,
+                    isInviteOnly: false,
+                    isRecurringEventTemplate: false,
+                    baseEvent: null,
+                    sequenceNumber: null,
+                    totalCount: null,
+                    hasExceptions: false,
+                    progressLabel: null,
+                    recurrenceDescription: null,
+                    recurrenceRule: null,
+                    attachments: [],
+                    creator: { id: '2', name: 'Creator User 2' },
+                    organization: { id: '1', name: 'Test Organization' },
+                    createdAt: dayjs().toISOString(),
+                    updatedAt: dayjs().toISOString(),
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+
+    const branchOrgMock = {
+      request: {
+        query: GET_ORGANIZATION_DATA_PG,
+        variables: buildOrgVariables(),
+      },
+      result: {
+        data: {
+          organization: {
+            id: '1',
+            name: 'Test Organization',
+          },
+        },
+      },
+    };
+
+    const branchLink = new StaticMockLink(
+      [branchEventsMock, branchOrgMock].map((mock) => ({
+        ...mock,
+        variableMatcher: () => true,
+      })),
+      true,
+    );
+
+    renderWithLink(branchLink);
+
+    await waitFor(() => {
+      const jsonPre = screen.getByTestId('event-data-json');
+      const parsedEvents = JSON.parse(jsonPre.textContent || '[]');
+
+      const withBounds = parsedEvents.find(
+        (event: { id: string }) => event.id === 'timed-with-bounds',
+      );
+      const missingBounds = parsedEvents.find(
+        (event: { id: string }) => event.id === 'timed-missing-bounds',
+      );
+
+      expect(withBounds.startTime).toBe(dayjs(timedStartAt).format('HH:mm:ss'));
+      expect(withBounds.endTime).toBe(dayjs(timedEndAt).format('HH:mm:ss'));
+      expect(missingBounds.startTime).toBeNull();
+      expect(missingBounds.endTime).toBeNull();
+    });
   });
 });
 

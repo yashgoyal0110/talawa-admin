@@ -50,7 +50,7 @@
 import { useMutation, useQuery } from '@apollo/client';
 import { CREATE_EVENT_MUTATION } from 'GraphQl/Mutations/EventMutations';
 import {
-  ORGANIZATIONS_LIST,
+  ORGANIZATIONS_LIST_BASIC,
   GET_ORGANIZATION_EVENTS_USER_PORTAL_PG,
 } from 'GraphQl/Queries/Queries';
 import EventCalendar from 'components/EventCalender/Monthly/EventCalender';
@@ -68,7 +68,8 @@ import { useParams } from 'react-router';
 import { ViewType } from 'screens/AdminPortal/OrganizationEvents/OrganizationEvents';
 import { errorHandler } from 'utils/errorHandler';
 import useLocalStorage from 'utils/useLocalstorage';
-import type { IEventEdge, ICreateEventInput } from 'types/Event/interface';
+import type { IEventEdge, IEventFormInput } from 'types/Event/interface';
+import { mapCreateEventInputToMutationInput } from 'types/Event/createEventInput';
 import styles from './Events.module.css';
 import EventForm, {
   formatRecurrenceForPayload,
@@ -150,10 +151,8 @@ export default function Events(): JSX.Element {
     fetchPolicy: 'cache-and-network',
   });
 
-  // Query to fetch organization details
-  const { data: orgData } = useQuery(ORGANIZATIONS_LIST, {
-    variables: { id: organizationId },
-  });
+  // Basic org fields only (avoids admin-only metadata). No variables; current org resolved via orgData.organizations.find(organizationId).
+  const { data: orgData } = useQuery(ORGANIZATIONS_LIST_BASIC);
 
   // Mutation to create a new event
   const [create] = useMutation(CREATE_EVENT_MUTATION, {
@@ -204,10 +203,22 @@ export default function Events(): JSX.Element {
         : undefined;
 
       // Build input object with shared typed interface
-      const input: ICreateEventInput = {
+      // All-day events: use startDate/endDate (YYYY-MM-DD strings)
+      // Timed events: use startAt/endAt (ISO timestamps)
+      const input: IEventFormInput = {
         name: payload.name,
-        startAt: payload.startAtISO,
-        endAt: payload.endAtISO,
+        ...(payload.allDay
+          ? {
+              // Backend expects all-day endDate to be exclusive (strictly greater than startDate).
+              startDate: dayjs(payload.startDate).format('YYYY-MM-DD'),
+              endDate: dayjs(payload.endDate)
+                .add(1, 'day')
+                .format('YYYY-MM-DD'),
+            }
+          : {
+              startAt: payload.startAtISO,
+              endAt: payload.endAtISO,
+            }),
         organizationId,
         allDay: payload.allDay,
         isPublic: payload.isPublic,
@@ -218,15 +229,17 @@ export default function Events(): JSX.Element {
         ...(recurrenceInput && { recurrence: recurrenceInput }),
       };
 
+      const mutationInput = mapCreateEventInputToMutationInput(input);
+
       const { data: createEventData, errors } = await create({
-        variables: { input },
+        variables: { input: mutationInput },
       });
 
       // Handle partial success: prioritize data over errors
       // If createEventData exists, treat as success even if errors are present
       // This handles GraphQL partial success scenarios where mutation succeeds
       // but some non-critical fields may have issues
-      if (createEventData) {
+      if (createEventData?.createEvent) {
         NotificationToast.success(t('eventCreated') as string);
         try {
           await refetch();
@@ -254,12 +267,18 @@ export default function Events(): JSX.Element {
       description: edge.node.description || '',
       startAt: edge.node.startAt,
       endAt: edge.node.endAt,
+      startDate: edge.node.startDate,
+      endDate: edge.node.endDate,
       startTime: edge.node.allDay
         ? null
-        : dayjs.utc(edge.node.startAt).format('HH:mm:ss'),
+        : edge.node.startAt
+          ? dayjs(edge.node.startAt).format('HH:mm:ss')
+          : null,
       endTime: edge.node.allDay
         ? null
-        : dayjs.utc(edge.node.endAt).format('HH:mm:ss'),
+        : edge.node.endAt
+          ? dayjs(edge.node.endAt).format('HH:mm:ss')
+          : null,
       allDay: edge.node.allDay,
       location: edge.node.location || '',
       isPublic: edge.node.isPublic,
@@ -295,9 +314,12 @@ export default function Events(): JSX.Element {
         errorMessage.includes('rate limit') ||
         eventDataError.message?.includes('Please try again later');
       const isAuthError = errorMessage.includes('not authorized');
+      const isServerError =
+        errorMessage.includes('internal server error') ||
+        errorMessage.includes('500');
 
       // Suppress rate limit errors or auth errors if we have partial data
-      if (isRateLimitError || (isAuthError && hasData)) {
+      if (isRateLimitError || ((isAuthError || isServerError) && hasData)) {
         return;
       }
 
@@ -345,7 +367,9 @@ export default function Events(): JSX.Element {
         viewType={viewType}
         eventData={events}
         refetchEvents={refetch}
-        orgData={orgData}
+        orgData={orgData?.organizations?.find(
+          (o: { id: string }) => o.id === organizationId,
+        )}
         userRole={userRole}
         userId={userId}
         onMonthChange={(month, year) => {
@@ -374,9 +398,7 @@ export default function Events(): JSX.Element {
           initialValues={defaultEventValues}
           onSubmit={handleCreateEvent}
           onCancel={closeCreateEventModal}
-          submitLabel={t('createEvent')}
-          t={t}
-          tCommon={tCommon}
+          submitLabel={tCommon('create')}
           showCreateChat
           showRegisterable
           showPublicToggle

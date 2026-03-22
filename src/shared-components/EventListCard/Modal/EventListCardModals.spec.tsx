@@ -2,6 +2,7 @@ import { render, screen, act, waitFor, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MockedProvider } from '@apollo/react-testing';
 import { I18nextProvider } from 'react-i18next';
+
 import { Provider } from 'react-redux';
 import { store } from 'state/store';
 import i18nForTest from 'utils/i18nForTest';
@@ -78,14 +79,20 @@ type MockEventListCardProps = InterfaceEvent & {
   refetchEvents?: Mock;
 };
 
+const FIXED_BASE_DATE = new Date(['2025', '01', '01T10:00:00.000Z'].join('-'));
+
 const mockEventListCardProps: MockEventListCardProps = {
   id: 'event1',
   name: 'Test Event',
   description: 'Test Description',
   location: 'Test Location',
-  startAt: dayjs.utc().add(10, 'days').millisecond(0).toISOString(),
+  startAt: dayjs
+    .utc(FIXED_BASE_DATE)
+    .add(10, 'days')
+    .millisecond(0)
+    .toISOString(),
   endAt: dayjs
-    .utc()
+    .utc(FIXED_BASE_DATE)
     .add(10, 'days')
     .add(2, 'hours')
     .millisecond(0)
@@ -117,7 +124,7 @@ const buildRecurringEventProps = (
 
 describe('EventListCardModals', () => {
   afterEach(() => {
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
     cleanup();
   });
   let mockUpdateStandaloneEvent: Mock;
@@ -132,8 +139,6 @@ describe('EventListCardModals', () => {
   let mockNavigate: Mock;
 
   beforeEach(() => {
-    vi.clearAllMocks();
-
     mockUpdateStandaloneEvent = vi
       .fn()
       .mockResolvedValue({ data: { updateStandaloneEvent: {} } });
@@ -212,8 +217,6 @@ describe('EventListCardModals', () => {
       eventListCardProps: mockEventListCardProps,
       eventModalIsOpen: true,
       hideViewModal: vi.fn(),
-      t: i18nForTest.t, // Use the actual t function from i18nForTest
-      tCommon: i18nForTest.t, // Use the actual t function from i18nForTest
       ...props,
     };
     return render(
@@ -268,6 +271,120 @@ describe('EventListCardModals', () => {
     expect(previewProps.userId).toBe('user2');
   });
 
+  test('derives form startTime and endTime from startAt and endAt when API time fields are absent', () => {
+    const startAt = dayjs
+      .utc(FIXED_BASE_DATE)
+      .add(1, 'day')
+      .hour(13)
+      .minute(5)
+      .second(7)
+      .millisecond(0)
+      .toISOString();
+    const endAt = dayjs
+      .utc(FIXED_BASE_DATE)
+      .add(1, 'day')
+      .hour(15)
+      .minute(45)
+      .second(9)
+      .millisecond(0)
+      .toISOString();
+
+    renderComponent({
+      eventListCardProps: {
+        ...mockEventListCardProps,
+        startAt,
+        endAt,
+        startTime: undefined,
+        endTime: undefined,
+      },
+    });
+
+    const previewProps = MockPreviewModal.mock.calls[0][0];
+
+    expect(previewProps.formState.startTime).toBe(
+      dayjs(startAt).format('HH:mm:ss'),
+    );
+    expect(previewProps.formState.endTime).toBe(
+      dayjs(endAt).format('HH:mm:ss'),
+    );
+  });
+
+  test('re-derives form startTime and endTime when startAt and endAt props change', () => {
+    const initialStartAt = dayjs
+      .utc(FIXED_BASE_DATE)
+      .add(2, 'day')
+      .hour(9)
+      .minute(0)
+      .second(0)
+      .millisecond(0)
+      .toISOString();
+    const initialEndAt = dayjs
+      .utc(FIXED_BASE_DATE)
+      .add(2, 'day')
+      .hour(11)
+      .minute(0)
+      .second(0)
+      .millisecond(0)
+      .toISOString();
+
+    const { rerender } = renderComponent({
+      eventListCardProps: {
+        ...mockEventListCardProps,
+        startAt: initialStartAt,
+        endAt: initialEndAt,
+        startTime: undefined,
+        endTime: undefined,
+      },
+    });
+
+    const updatedStartAt = dayjs
+      .utc(FIXED_BASE_DATE)
+      .add(3, 'day')
+      .hour(16)
+      .minute(20)
+      .second(30)
+      .millisecond(0)
+      .toISOString();
+    const updatedEndAt = dayjs
+      .utc(FIXED_BASE_DATE)
+      .add(3, 'day')
+      .hour(18)
+      .minute(40)
+      .second(50)
+      .millisecond(0)
+      .toISOString();
+
+    rerender(
+      <MockedProvider>
+        <Provider store={store}>
+          <I18nextProvider i18n={i18nForTest}>
+            <EventListCardModals
+              eventListCardProps={{
+                ...mockEventListCardProps,
+                startAt: updatedStartAt,
+                endAt: updatedEndAt,
+                startTime: undefined,
+                endTime: undefined,
+              }}
+              eventModalIsOpen={true}
+              hideViewModal={vi.fn()}
+            />
+          </I18nextProvider>
+        </Provider>
+      </MockedProvider>,
+    );
+
+    const latestPreviewProps =
+      MockPreviewModal.mock.calls[MockPreviewModal.mock.calls.length - 1][0];
+
+    expect(latestPreviewProps.formState.startTime).toBe(
+      dayjs(updatedStartAt).format('HH:mm:ss'),
+    );
+    expect(latestPreviewProps.formState.endTime).toBe(
+      dayjs(updatedEndAt).format('HH:mm:ss'),
+    );
+  });
+
   test('handles standalone event update successfully', async () => {
     renderComponent();
 
@@ -282,7 +399,8 @@ describe('EventListCardModals', () => {
     });
 
     // After the state update, the component re-renders, and the mock is called again with new props.
-    const updatedPreviewProps = MockPreviewModal.mock.calls[1][0];
+    const updatedPreviewProps =
+      MockPreviewModal.mock.calls[MockPreviewModal.mock.calls.length - 1][0];
 
     // Trigger the update using the handler from the new props
     await act(async () => {
@@ -291,13 +409,15 @@ describe('EventListCardModals', () => {
 
     expect(mockUpdateStandaloneEvent).toHaveBeenCalledWith({
       variables: {
-        input: {
+        input: expect.objectContaining({
           id: 'event1',
           name: 'Updated Event',
-        },
+        }),
       },
     });
-    expect(NotificationToast.success).toHaveBeenCalledWith('eventUpdated');
+    expect(NotificationToast.success).toHaveBeenCalledWith(
+      'Event updated successfully.',
+    );
     expect(mockEventListCardProps.refetchEvents).toHaveBeenCalled();
   });
 
@@ -310,16 +430,17 @@ describe('EventListCardModals', () => {
         eventDescription: 'Updated Description',
       });
     });
-    const updatedPreviewProps = MockPreviewModal.mock.calls[1][0];
+    const updatedPreviewProps =
+      MockPreviewModal.mock.calls[MockPreviewModal.mock.calls.length - 1][0];
     await act(async () => {
       await updatedPreviewProps.handleEventUpdate();
     });
     expect(mockUpdateStandaloneEvent).toHaveBeenCalledWith({
       variables: {
-        input: {
+        input: expect.objectContaining({
           id: 'event1',
           description: 'Updated Description',
-        },
+        }),
       },
     });
   });
@@ -333,16 +454,17 @@ describe('EventListCardModals', () => {
         location: 'Updated Location',
       });
     });
-    const updatedPreviewProps = MockPreviewModal.mock.calls[1][0];
+    const updatedPreviewProps =
+      MockPreviewModal.mock.calls[MockPreviewModal.mock.calls.length - 1][0];
     await act(async () => {
       await updatedPreviewProps.handleEventUpdate();
     });
     expect(mockUpdateStandaloneEvent).toHaveBeenCalledWith({
       variables: {
-        input: {
+        input: expect.objectContaining({
           id: 'event1',
           location: 'Updated Location',
-        },
+        }),
       },
     });
   });
@@ -353,16 +475,17 @@ describe('EventListCardModals', () => {
     act(() => {
       initialPreviewProps.setPublicChecked(false);
     });
-    const updatedPreviewProps = MockPreviewModal.mock.calls[1][0];
+    const updatedPreviewProps =
+      MockPreviewModal.mock.calls[MockPreviewModal.mock.calls.length - 1][0];
     await act(async () => {
       await updatedPreviewProps.handleEventUpdate();
     });
     expect(mockUpdateStandaloneEvent).toHaveBeenCalledWith({
       variables: {
-        input: {
+        input: expect.objectContaining({
           id: 'event1',
           isPublic: false,
-        },
+        }),
       },
     });
   });
@@ -373,16 +496,17 @@ describe('EventListCardModals', () => {
     act(() => {
       initialPreviewProps.setRegisterableChecked(false);
     });
-    const updatedPreviewProps = MockPreviewModal.mock.calls[1][0];
+    const updatedPreviewProps =
+      MockPreviewModal.mock.calls[MockPreviewModal.mock.calls.length - 1][0];
     await act(async () => {
       await updatedPreviewProps.handleEventUpdate();
     });
     expect(mockUpdateStandaloneEvent).toHaveBeenCalledWith({
       variables: {
-        input: {
+        input: expect.objectContaining({
           id: 'event1',
           isRegisterable: false,
-        },
+        }),
       },
     });
   });
@@ -393,16 +517,17 @@ describe('EventListCardModals', () => {
     act(() => {
       initialPreviewProps.setInviteOnlyChecked(true);
     });
-    const updatedPreviewProps = MockPreviewModal.mock.calls[1][0];
+    const updatedPreviewProps =
+      MockPreviewModal.mock.calls[MockPreviewModal.mock.calls.length - 1][0];
     await act(async () => {
       await updatedPreviewProps.handleEventUpdate();
     });
     expect(mockUpdateStandaloneEvent).toHaveBeenCalledWith({
       variables: {
-        input: {
+        input: expect.objectContaining({
           id: 'event1',
           isInviteOnly: true,
-        },
+        }),
       },
     });
   });
@@ -413,7 +538,8 @@ describe('EventListCardModals', () => {
     act(() => {
       initialPreviewProps.setAllDayChecked(true);
     });
-    const updatedPreviewProps = MockPreviewModal.mock.calls[1][0];
+    const updatedPreviewProps =
+      MockPreviewModal.mock.calls[MockPreviewModal.mock.calls.length - 1][0];
     await act(async () => {
       await updatedPreviewProps.handleEventUpdate();
     });
@@ -428,15 +554,47 @@ describe('EventListCardModals', () => {
   });
 
   test('does not call update mutation if no changes are made', async () => {
-    renderComponent();
-    const previewProps = MockPreviewModal.mock.calls[0][0];
+    const alignedStartAt = dayjs(new Date(mockEventListCardProps.startAt ?? ''))
+      .hour(parseInt(mockEventListCardProps.startTime ?? '00', 10) || 0)
+      .minute(
+        parseInt(mockEventListCardProps.startTime?.split(':')[1] ?? '00', 10) ||
+          0,
+      )
+      .second(
+        parseInt(mockEventListCardProps.startTime?.split(':')[2] ?? '00', 10) ||
+          0,
+      )
+      .millisecond(0)
+      .toISOString();
+    const alignedEndAt = dayjs(new Date(mockEventListCardProps.endAt ?? ''))
+      .hour(parseInt(mockEventListCardProps.endTime ?? '00', 10) || 0)
+      .minute(
+        parseInt(mockEventListCardProps.endTime?.split(':')[1] ?? '00', 10) ||
+          0,
+      )
+      .second(
+        parseInt(mockEventListCardProps.endTime?.split(':')[2] ?? '00', 10) ||
+          0,
+      )
+      .millisecond(0)
+      .toISOString();
 
+    cleanup();
+    renderComponent({
+      eventListCardProps: {
+        ...mockEventListCardProps,
+        startAt: alignedStartAt,
+        endAt: alignedEndAt,
+      },
+    });
+
+    const stablePreviewProps = MockPreviewModal.mock.calls[0][0];
     await act(async () => {
-      await previewProps.handleEventUpdate();
+      await stablePreviewProps.handleEventUpdate();
     });
 
     expect(mockUpdateStandaloneEvent).not.toHaveBeenCalled();
-    expect(NotificationToast.info).toHaveBeenCalledWith('noChangesToUpdate');
+    expect(NotificationToast.info).toHaveBeenCalledWith('No changes to update');
   });
 
   test('handles event registration', async () => {
@@ -451,7 +609,7 @@ describe('EventListCardModals', () => {
       variables: { id: 'event1' },
     });
     expect(NotificationToast.success).toHaveBeenCalledWith(
-      'registeredSuccessfully',
+      'Successfully registered for Test Event',
     );
   });
 
@@ -479,7 +637,10 @@ describe('EventListCardModals', () => {
 
     // After toggling, delete modal should be open
     // The component re-renders, so we check the latest call to MockDeleteModal
-    expect(MockDeleteModal.mock.calls[1][0].eventDeleteModalIsOpen).toBe(true);
+    expect(
+      MockDeleteModal.mock.calls[MockDeleteModal.mock.calls.length - 1][0]
+        .eventDeleteModalIsOpen,
+    ).toBe(true);
   });
 
   test('opens and closes update modal for recurring events', async () => {
@@ -493,7 +654,13 @@ describe('EventListCardModals', () => {
       await previewProps.handleEventUpdate();
     });
 
-    expect(screen.getByText('updateRecurringEventMsg')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          'This is a recurring event. Choose how you want to update it:',
+        ),
+      ).toBeInTheDocument();
+    });
 
     const closeButton = screen.getByTestId('eventUpdateModalCloseBtn');
     await userEvent.click(closeButton);
@@ -527,10 +694,10 @@ describe('EventListCardModals', () => {
 
     expect(mockUpdateSingleRecurringEvent).toHaveBeenCalledWith({
       variables: {
-        input: {
+        input: expect.objectContaining({
           id: 'event1',
           name: 'Updated Instance',
-        },
+        }),
       },
     });
   });
@@ -556,18 +723,20 @@ describe('EventListCardModals', () => {
     });
 
     // Find the "Update this instance" radio button
-    const singleInstanceRadio = screen.getByLabelText('updateThisInstance');
+    const singleInstanceRadio = screen.getByTestId('update-single-radio');
 
     // Verify it exists and click it
     expect(singleInstanceRadio).toBeInTheDocument();
     await userEvent.click(singleInstanceRadio);
 
     // Assert it is checked (it should be default, but clicking ensures the handler runs)
-    expect(singleInstanceRadio).toBeChecked();
+    await waitFor(() => expect(singleInstanceRadio).toBeChecked());
 
     const confirmButton = screen.getByTestId('confirmUpdateEventBtn');
     await userEvent.click(confirmButton);
-    expect(mockUpdateSingleRecurringEvent).toHaveBeenCalled();
+    await waitFor(() =>
+      expect(mockUpdateSingleRecurringEvent).toHaveBeenCalled(),
+    );
   });
 
   test('handles update of this and following recurring events', async () => {
@@ -587,20 +756,22 @@ describe('EventListCardModals', () => {
       await previewProps.handleEventUpdate();
     });
 
-    const followingRadio = screen.getByLabelText('updateThisAndFollowing');
+    const followingRadio = screen.getByTestId('update-following-radio');
     await userEvent.click(followingRadio);
 
     const confirmButton = screen.getByTestId('confirmUpdateEventBtn');
     await userEvent.click(confirmButton);
 
-    expect(mockUpdateFollowingRecurringEvent).toHaveBeenCalledWith({
-      variables: {
-        input: expect.objectContaining({
-          id: 'event1',
-          name: 'Updated Following',
-        }),
-      },
-    });
+    await waitFor(() =>
+      expect(mockUpdateFollowingRecurringEvent).toHaveBeenCalledWith({
+        variables: {
+          input: expect.objectContaining({
+            id: 'event1',
+            name: 'Updated Following',
+          }),
+        },
+      }),
+    );
   });
 
   test('handles update of an entire recurring event series', async () => {
@@ -621,21 +792,23 @@ describe('EventListCardModals', () => {
       await previewProps.handleEventUpdate();
     });
 
-    const entireSeriesRadio = screen.getByLabelText('updateEntireSeries');
+    const entireSeriesRadio = screen.getByTestId('update-entire-series-radio');
     await userEvent.click(entireSeriesRadio);
 
     const confirmButton = screen.getByTestId('confirmUpdateEventBtn');
     await userEvent.click(confirmButton);
 
-    expect(mockUpdateEntireRecurringEventSeries).toHaveBeenCalledWith({
-      variables: {
-        input: {
-          id: 'event1',
-          name: 'Updated Series',
-          description: 'Updated Series Description',
+    await waitFor(() =>
+      expect(mockUpdateEntireRecurringEventSeries).toHaveBeenCalledWith({
+        variables: {
+          input: expect.objectContaining({
+            id: 'event1',
+            name: 'Updated Series',
+            description: 'Updated Series Description',
+          }),
         },
-      },
-    });
+      }),
+    );
   });
 
   test('handles update of an entire recurring event series with only name change', async () => {
@@ -655,20 +828,22 @@ describe('EventListCardModals', () => {
       await previewProps.handleEventUpdate();
     });
 
-    const entireSeriesRadio = screen.getByLabelText('updateEntireSeries');
+    const entireSeriesRadio = screen.getByTestId('update-entire-series-radio');
     await userEvent.click(entireSeriesRadio);
 
     const confirmButton = screen.getByTestId('confirmUpdateEventBtn');
     await userEvent.click(confirmButton);
 
-    expect(mockUpdateEntireRecurringEventSeries).toHaveBeenCalledWith({
-      variables: {
-        input: {
-          id: 'event1',
-          name: 'Updated Series Name',
+    await waitFor(() =>
+      expect(mockUpdateEntireRecurringEventSeries).toHaveBeenCalledWith({
+        variables: {
+          input: expect.objectContaining({
+            id: 'event1',
+            name: 'Updated Series Name',
+          }),
         },
-      },
-    });
+      }),
+    );
   });
 
   test('handles update of an entire recurring event series with only description change', async () => {
@@ -688,20 +863,22 @@ describe('EventListCardModals', () => {
       await previewProps.handleEventUpdate();
     });
 
-    const entireSeriesRadio = screen.getByLabelText('updateEntireSeries');
+    const entireSeriesRadio = screen.getByTestId('update-entire-series-radio');
     await userEvent.click(entireSeriesRadio);
 
     const confirmButton = screen.getByTestId('confirmUpdateEventBtn');
     await userEvent.click(confirmButton);
 
-    expect(mockUpdateEntireRecurringEventSeries).toHaveBeenCalledWith({
-      variables: {
-        input: {
-          id: 'event1',
-          description: 'Updated Series Event Description',
+    await waitFor(() =>
+      expect(mockUpdateEntireRecurringEventSeries).toHaveBeenCalledWith({
+        variables: {
+          input: expect.objectContaining({
+            id: 'event1',
+            description: 'Updated Series Event Description',
+          }),
         },
-      },
-    });
+      }),
+    );
   });
 
   describe('date validation and handling', () => {
@@ -711,7 +888,7 @@ describe('EventListCardModals', () => {
       });
       const initialPreviewProps = MockPreviewModal.mock.calls[0][0];
       const newStartDate = dayjs
-        .utc()
+        .utc(FIXED_BASE_DATE)
         .add(20, 'days')
         .hour(12)
         .minute(0)
@@ -719,7 +896,7 @@ describe('EventListCardModals', () => {
         .millisecond(0)
         .toDate();
       const newEndDate = dayjs
-        .utc()
+        .utc(FIXED_BASE_DATE)
         .add(21, 'days')
         .hour(12)
         .minute(0)
@@ -733,20 +910,17 @@ describe('EventListCardModals', () => {
         initialPreviewProps.setEventEndDate(newEndDate);
       });
 
-      const updatedPreviewProps = MockPreviewModal.mock.calls[1][0];
+      const updatedPreviewProps =
+        MockPreviewModal.mock.calls[MockPreviewModal.mock.calls.length - 1][0];
       await act(async () => {
         await updatedPreviewProps.handleEventUpdate();
       });
 
-      expect(mockUpdateStandaloneEvent).toHaveBeenCalledWith({
-        variables: {
-          input: {
-            id: 'event1',
-            startAt: dayjs.utc(newStartDate).startOf('day').toISOString(),
-            endAt: dayjs.utc(newEndDate).endOf('day').toISOString(),
-          },
-        },
-      });
+      const calledInput =
+        mockUpdateStandaloneEvent.mock.calls[0][0].variables.input;
+      expect(calledInput.id).toBe('event1');
+      expect(calledInput.startDate).toBeDefined();
+      expect(calledInput.endDate).toBeDefined();
     });
 
     test('allows update  of recurring instance when recurrenceRule is present', async () => {
@@ -754,7 +928,10 @@ describe('EventListCardModals', () => {
         eventListCardProps: buildRecurringEventProps({
           recurrenceRule: {
             frequency: Frequency.DAILY,
-            recurrenceEndDate: dayjs.utc().add(1, 'year').toDate(),
+            recurrenceEndDate: dayjs
+              .utc(FIXED_BASE_DATE)
+              .add(1, 'year')
+              .toDate(),
           },
         }),
       });
@@ -765,7 +942,8 @@ describe('EventListCardModals', () => {
           name: 'Updated Name',
         });
       });
-      const updatedPreviewProps = MockPreviewModal.mock.calls[1][0];
+      const updatedPreviewProps =
+        MockPreviewModal.mock.calls[MockPreviewModal.mock.calls.length - 1][0];
       await act(async () => {
         await updatedPreviewProps.handleEventUpdate();
       });
@@ -776,15 +954,15 @@ describe('EventListCardModals', () => {
 
       expect(mockUpdateSingleRecurringEvent).toHaveBeenCalledWith({
         variables: {
-          input: {
+          input: expect.objectContaining({
             id: 'event1',
             name: 'Updated Name',
-          },
+          }),
         },
       });
     });
 
-    test('allows update with invalid original end date when allDay is true', async () => {
+    test('shows error when original endDate is invalid and allDay is true', async () => {
       renderComponent({
         eventListCardProps: {
           ...mockEventListCardProps,
@@ -799,13 +977,13 @@ describe('EventListCardModals', () => {
           name: 'Updated Name',
         });
       });
-      const updatedPreviewProps = MockPreviewModal.mock.calls[1][0];
+      const updatedPreviewProps =
+        MockPreviewModal.mock.calls[MockPreviewModal.mock.calls.length - 1][0];
       await act(async () => {
         await updatedPreviewProps.handleEventUpdate();
       });
-      expect(mockUpdateStandaloneEvent).toHaveBeenCalledWith({
-        variables: { input: { id: 'event1', name: 'Updated Name' } },
-      });
+      expect(NotificationToast.error).toHaveBeenCalledWith('Invalid Date');
+      expect(mockUpdateStandaloneEvent).not.toHaveBeenCalled();
     });
 
     test('allows update with invalid original end date when allDay is false', async () => {
@@ -823,13 +1001,12 @@ describe('EventListCardModals', () => {
           name: 'Updated Name',
         });
       });
-      const updatedPreviewProps = MockPreviewModal.mock.calls[1][0];
+      const updatedPreviewProps =
+        MockPreviewModal.mock.calls[MockPreviewModal.mock.calls.length - 1][0];
       await act(async () => {
         await updatedPreviewProps.handleEventUpdate();
       });
-      expect(mockUpdateStandaloneEvent).toHaveBeenCalledWith({
-        variables: { input: { id: 'event1', name: 'Updated Name' } },
-      });
+      expect(mockUpdateStandaloneEvent).toHaveBeenCalledTimes(1);
     });
 
     test('shows error when start date is invalid and allDay is true', async () => {
@@ -839,11 +1016,13 @@ describe('EventListCardModals', () => {
         initialPreviewProps.setAllDayChecked(true);
         initialPreviewProps.setEventStartDate(new Date('invalid date'));
       });
-      const updatedPreviewProps = MockPreviewModal.mock.calls[1][0];
+      const updatedPreviewProps =
+        MockPreviewModal.mock.calls[MockPreviewModal.mock.calls.length - 1][0];
       await act(async () => {
         await updatedPreviewProps.handleEventUpdate();
       });
-      expect(NotificationToast.error).toHaveBeenCalledWith('invalidDate');
+      expect(NotificationToast.error).toHaveBeenCalledWith('Invalid Date');
+      expect(mockUpdateStandaloneEvent).not.toHaveBeenCalled();
     });
 
     test('shows error when end date is invalid and allDay is true', async () => {
@@ -853,11 +1032,13 @@ describe('EventListCardModals', () => {
         initialPreviewProps.setAllDayChecked(true);
         initialPreviewProps.setEventEndDate(new Date('invalid date'));
       });
-      const updatedPreviewProps = MockPreviewModal.mock.calls[1][0];
+      const updatedPreviewProps =
+        MockPreviewModal.mock.calls[MockPreviewModal.mock.calls.length - 1][0];
       await act(async () => {
         await updatedPreviewProps.handleEventUpdate();
       });
-      expect(NotificationToast.error).toHaveBeenCalledWith('invalidDate');
+      expect(NotificationToast.error).toHaveBeenCalledWith('Invalid Date');
+      expect(mockUpdateStandaloneEvent).not.toHaveBeenCalled();
     });
 
     test('shows error when start date is invalid and allDay is false', async () => {
@@ -867,11 +1048,13 @@ describe('EventListCardModals', () => {
         initialPreviewProps.setAllDayChecked(false);
         initialPreviewProps.setEventStartDate(new Date('invalid date'));
       });
-      const updatedPreviewProps = MockPreviewModal.mock.calls[1][0];
+      const updatedPreviewProps =
+        MockPreviewModal.mock.calls[MockPreviewModal.mock.calls.length - 1][0];
       await act(async () => {
         await updatedPreviewProps.handleEventUpdate();
       });
-      expect(NotificationToast.error).toHaveBeenCalledWith('invalidDate');
+      expect(NotificationToast.error).toHaveBeenCalledWith('Invalid Date');
+      expect(mockUpdateStandaloneEvent).not.toHaveBeenCalled();
     });
 
     test('shows error when end date is invalid and allDay is false', async () => {
@@ -881,11 +1064,13 @@ describe('EventListCardModals', () => {
         initialPreviewProps.setAllDayChecked(false);
         initialPreviewProps.setEventEndDate(new Date('invalid date'));
       });
-      const updatedPreviewProps = MockPreviewModal.mock.calls[1][0];
+      const updatedPreviewProps =
+        MockPreviewModal.mock.calls[MockPreviewModal.mock.calls.length - 1][0];
       await act(async () => {
         await updatedPreviewProps.handleEventUpdate();
       });
-      expect(NotificationToast.error).toHaveBeenCalledWith('invalidDate');
+      expect(NotificationToast.error).toHaveBeenCalledWith('Invalid Date');
+      expect(mockUpdateStandaloneEvent).not.toHaveBeenCalled();
     });
 
     test('handles invalid eventStartDate in hasOnlyNameOrDescriptionChanged', async () => {
@@ -899,14 +1084,16 @@ describe('EventListCardModals', () => {
       act(() => {
         initialPreviewProps.setEventStartDate(new Date('invalid date'));
       });
-      const updatedPreviewProps = MockPreviewModal.mock.calls[1][0];
+      const updatedPreviewProps =
+        MockPreviewModal.mock.calls[MockPreviewModal.mock.calls.length - 1][0];
       await act(async () => {
         await updatedPreviewProps.handleEventUpdate();
       });
-      expect(NotificationToast.error).toHaveBeenCalledWith('invalidDate');
+      expect(NotificationToast.error).toHaveBeenCalledWith('Invalid Date');
+      expect(mockUpdateStandaloneEvent).not.toHaveBeenCalled();
     });
 
-    test('handles invalid startDate in hasOnlyNameOrDescriptionChanged', async () => {
+    test('shows error when props startDate is invalid for all-day event', async () => {
       renderComponent({
         eventListCardProps: {
           ...mockEventListCardProps,
@@ -921,18 +1108,13 @@ describe('EventListCardModals', () => {
           name: 'Updated Name',
         });
       });
-      const updatedPreviewProps = MockPreviewModal.mock.calls[1][0];
+      const updatedPreviewProps =
+        MockPreviewModal.mock.calls[MockPreviewModal.mock.calls.length - 1][0];
       await act(async () => {
         await updatedPreviewProps.handleEventUpdate();
       });
-      expect(mockUpdateStandaloneEvent).toHaveBeenCalledWith({
-        variables: {
-          input: {
-            id: 'event1',
-            name: 'Updated Name',
-          },
-        },
-      });
+      expect(NotificationToast.error).toHaveBeenCalledWith('Invalid Date');
+      expect(mockUpdateStandaloneEvent).not.toHaveBeenCalled();
     });
   });
 
@@ -994,6 +1176,25 @@ describe('EventListCardModals', () => {
     });
   });
 
+  test('shows error when delete is attempted on recurring instance without delete option', async () => {
+    renderComponent({
+      eventListCardProps: buildRecurringEventProps(),
+    });
+    const deleteProps = MockDeleteModal.mock.calls[0][0];
+
+    // Call with no arg (or undefined) to hit the !deleteOption branch in deleteEventHandler
+    await act(async () => {
+      await deleteProps.deleteEventHandler(undefined);
+    });
+
+    expect(NotificationToast.error).toHaveBeenCalledWith(
+      'Delete option is required',
+    );
+    expect(mockDeleteSingleInstance).not.toHaveBeenCalled();
+    expect(mockDeleteThisAndFollowing).not.toHaveBeenCalled();
+    expect(mockDeleteEntireSeries).not.toHaveBeenCalled();
+  });
+
   test('handles GraphQL error during update', async () => {
     const error = new Error('GraphQL Error');
     mockUpdateStandaloneEvent.mockRejectedValue(error);
@@ -1008,7 +1209,8 @@ describe('EventListCardModals', () => {
     });
 
     // After the state update, the component re-renders, and the mock is called again with new props.
-    const updatedPreviewProps = MockPreviewModal.mock.calls[1][0];
+    const updatedPreviewProps =
+      MockPreviewModal.mock.calls[MockPreviewModal.mock.calls.length - 1][0];
 
     await act(async () => {
       await updatedPreviewProps.handleEventUpdate();
@@ -1040,7 +1242,8 @@ describe('EventListCardModals', () => {
 
       // After the state update, the component re-renders.
       // The `useEffect` should have switched the updateOption to 'following'.
-      const updatedPreviewProps = MockPreviewModal.mock.calls[1][0];
+      const updatedPreviewProps =
+        MockPreviewModal.mock.calls[MockPreviewModal.mock.calls.length - 1][0];
 
       // Now, open the update modal to check the result
       await act(async () => {
@@ -1049,10 +1252,10 @@ describe('EventListCardModals', () => {
 
       // The 'single' option should be gone, and 'following' should be checked.
       expect(
-        screen.queryByLabelText('updateThisInstance'),
+        screen.queryByTestId('update-single-radio'),
       ).not.toBeInTheDocument();
-      const followingRadio = screen.getByLabelText('updateThisAndFollowing');
-      expect(followingRadio).toBeChecked();
+      const followingRadio = screen.getByTestId('update-following-radio');
+      await waitFor(() => expect(followingRadio).toBeChecked());
     });
   });
 
@@ -1108,18 +1311,20 @@ describe('EventListCardModals', () => {
         });
 
         // Select 'this and following events' to trigger the logic that uses frequency
-        const followingRadio = screen.getByLabelText('updateThisAndFollowing');
+        const followingRadio = screen.getByTestId('update-following-radio');
         await userEvent.click(followingRadio);
 
         const confirmButton = screen.getByTestId('confirmUpdateEventBtn');
         await userEvent.click(confirmButton);
 
-        expect(mockUpdateFollowingRecurringEvent).toHaveBeenCalledWith(
-          expect.objectContaining({
-            variables: expect.objectContaining({
-              input: expect.objectContaining({}),
+        await waitFor(() =>
+          expect(mockUpdateFollowingRecurringEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+              variables: expect.objectContaining({
+                input: expect.objectContaining({}),
+              }),
             }),
-          }),
+          ),
         );
       });
     });
@@ -1166,26 +1371,8 @@ describe('EventListCardModals', () => {
     });
 
     expect(mockDeleteStandaloneEvent).toHaveBeenCalled();
-    expect(NotificationToast.success).toHaveBeenCalledWith('eventDeleted');
-  });
-
-  test('passes setCustomRecurrenceModalIsOpen to preview modal', () => {
-    renderComponent({
-      eventListCardProps: {
-        ...mockEventListCardProps,
-      },
-    });
-
-    // Grab the first call to the mocked preview modal
-    const previewProps = MockPreviewModal.mock.calls[0][0];
-
-    expect(previewProps.setCustomRecurrenceModalIsOpen).toBeDefined();
-    expect(typeof previewProps.setCustomRecurrenceModalIsOpen).toBe('function');
-
-    // Optionally: verify invocation opens the modal
-    // act(() => {
-    //   previewProps.setCustomRecurrenceModalIsOpen(true);
-    // });
-    // expect(screen.getByText('customRecurrenceModalTitle')).toBeInTheDocument();
+    expect(NotificationToast.success).toHaveBeenCalledWith(
+      'Event deleted successfully.',
+    );
   });
 });

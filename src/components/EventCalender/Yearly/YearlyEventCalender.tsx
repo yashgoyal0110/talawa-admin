@@ -36,7 +36,8 @@ import dayjs from 'dayjs';
 import Button from 'shared-components/Button';
 import React, { useState, useEffect, type JSX } from 'react';
 import styles from './YearlyEventCalender.module.css';
-import { ChevronLeft, ChevronRight } from '@mui/icons-material';
+import ChevronLeft from '@mui/icons-material/ChevronLeft';
+import ChevronRight from '@mui/icons-material/ChevronRight';
 import {
   type InterfaceEvent,
   type InterfaceCalendarProps,
@@ -143,8 +144,16 @@ const Calendar: React.FC<InterfaceCalendarProps> = ({
         ].join(' ');
 
         const eventsForDate =
-          events?.filter((event) => dayjs(event.startAt).isSame(date, 'day')) ||
-          [];
+          events?.filter((event) => {
+            if (event.allDay && event.startDate) {
+              // For all-day events, use startDate
+              return dayjs(event.startDate).isSame(date, 'day');
+            } else if (event.startAt) {
+              // For timed events, use startAt
+              return dayjs(event.startAt).isSame(date, 'day');
+            }
+            return false;
+          }) || [];
 
         const toggleExpand = (index: string): void => {
           setExpandedY((prev) => (prev === index ? null : index));

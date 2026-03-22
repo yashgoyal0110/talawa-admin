@@ -229,7 +229,7 @@ describe('Calendar Component', () => {
     cleanup();
   });
   const mockRefetchEvents = vi.fn();
-  const today = new Date(Date.UTC(2026, 3, 15, 10, 0, 0));
+  const today = new Date(Date.UTC(2026, 0, 15, 10, 0, 0));
   const todayISO = today.toISOString();
 
   const mockEventData = [
@@ -992,7 +992,11 @@ describe('Calendar Component', () => {
     // Look for expand buttons that may contain events
 
     // Check if there are events by clicking expand buttons and checking content
-    await clickExpandForDate(container, new Date(publicEvent.startAt), user);
+    await clickExpandForDate(
+      container,
+      new Date(publicEvent.startAt ?? todayISO),
+      user,
+    );
     await waitFor(() => {
       expect(screen.getByText('Public Event')).toBeInTheDocument();
       expect(screen.queryByText('Private Event')).toBeNull();
@@ -1021,7 +1025,8 @@ describe('Calendar Component', () => {
       },
     };
 
-    // Test with undefined orgData
+    // When orgData is undefined (e.g. User Portal), filterEvents trusts the backend
+    // and shows org-member events, so the private event is visible.
     const { container } = render(
       <BrowserRouter>
         <Calendar
@@ -1034,24 +1039,18 @@ describe('Calendar Component', () => {
       </BrowserRouter>,
     );
 
-    // Wait for component to render
     const currentYear = today.getFullYear();
     await waitFor(() => {
       expect(screen.getByText(currentYear.toString())).toBeInTheDocument();
     });
 
-    // Since orgData is undefined, private events should be filtered out
-    // Assert that the private event is not present
-    expect(screen.queryByText('Private Event')).toBeNull();
-
-    // There should be no expand buttons since no events are visible
-    const expandButtons = container.querySelectorAll(
-      '[data-testid^="expand-btn-"]',
-    );
-    expect(expandButtons).toHaveLength(0);
+    // Event is shown (trust backend); day with event has an expand button.
+    const expandBtn = getToggleButtonForDate(container, today);
+    expect(expandBtn).toBeTruthy();
+    expect(expandBtn?.getAttribute('data-testid')).toMatch(/^expand-btn-/);
   });
 
-  test('handles orgData with empty members edges', async () => {
+  test('handles orgData with empty members edges (trust backend for User Portal)', async () => {
     const privateEvent: CalendarEventItem = {
       id: 'private-event',
       location: 'Private Location',
@@ -1081,7 +1080,8 @@ describe('Calendar Component', () => {
       },
     };
 
-    // Test with empty member edges
+    // When orgData has empty members (e.g. User Portal uses ORGANIZATIONS_LIST_BASIC),
+    // filterEvents trusts the backend and shows org-member events so they are not hidden.
     const { container } = render(
       <BrowserRouter>
         <Calendar
@@ -1094,21 +1094,20 @@ describe('Calendar Component', () => {
       </BrowserRouter>,
     );
 
-    // Wait for component to render
     const currentYear = today.getFullYear();
     await waitFor(() => {
       expect(screen.getByText(currentYear.toString())).toBeInTheDocument();
     });
 
-    // Since user is not in the members list (empty edges), private events should be filtered out
-    // Assert that the private event is not present
-    expect(screen.queryByText('Private Event')).toBeNull();
-
-    // There should be no expand buttons since no events are visible to this user
-    const expandButtons = container.querySelectorAll(
-      '[data-testid^="expand-btn-"]',
-    );
-    expect(expandButtons).toHaveLength(0);
+    // Org-member event is shown when members list is empty (trust backend).
+    // Yearly view shows event names only when expanded; assert expand button for that day.
+    const expandBtn = getToggleButtonForDate(container, today);
+    expect(expandBtn).toBeTruthy();
+    expect(expandBtn?.getAttribute('data-testid')).toMatch(/^expand-btn-/);
+    if (expandBtn) await user.click(expandBtn);
+    await waitFor(() => {
+      expect(screen.getByText('Private Event')).toBeInTheDocument();
+    });
   });
 
   test('processes multiple events for REGULAR user when user is a member', async () => {
@@ -1499,5 +1498,161 @@ describe('Calendar Component', () => {
     }
 
     expect(screen.queryByText('BadDateEvent')).toBeNull();
+  });
+
+  it('displays all-day events on the correct date using startDate', async () => {
+    const jan1 = new Date(today.getFullYear(), 0, 1, 12, 0, 0); // January 1, 2026
+    const allDayEvent = {
+      ...mockEventData[0],
+      name: 'All Day Event',
+      allDay: true,
+      startDate: jan1.toISOString(),
+      endDate: jan1.toISOString(),
+      startAt: null,
+      endAt: null,
+    };
+
+    const { container } = renderWithRouterAndPath(
+      <Calendar
+        eventData={[allDayEvent]}
+        refetchEvents={mockRefetchEvents}
+        userRole={UserRole.ADMINISTRATOR}
+        userId="admin1"
+        orgData={mockOrgData}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('day').length).toBeGreaterThan(0);
+    });
+
+    await clickExpandForDate(container, jan1, user);
+
+    // The event should appear on January 1st
+    // Since EventListCard is mocked to show the name, we can check if it appears
+    expect(screen.getByText('All Day Event')).toBeInTheDocument();
+  });
+
+  it('displays timed events on the correct date using startAt', async () => {
+    const jan1 = new Date(today.getFullYear(), 0, 1, 12, 0, 0); // January 1, 2026
+    const timedEvent = {
+      ...mockEventData[0],
+      name: 'Timed Event',
+      allDay: false,
+      startDate: jan1.toISOString(),
+      endDate: jan1.toISOString(),
+      startAt: jan1.toISOString(),
+      endAt: jan1.toISOString(),
+    };
+
+    const { container } = renderWithRouterAndPath(
+      <Calendar
+        eventData={[timedEvent]}
+        refetchEvents={mockRefetchEvents}
+        userRole={UserRole.ADMINISTRATOR}
+        userId="admin1"
+        orgData={mockOrgData}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('day').length).toBeGreaterThan(0);
+    });
+
+    await clickExpandForDate(container, jan1, user);
+
+    // The event should appear on January 1st
+    // Since EventListCard is mocked to show the name, we can check if it appears
+    expect(screen.getByText('Timed Event')).toBeInTheDocument();
+  });
+
+  it('does not display events that do not match the date', async () => {
+    const futureDate = new Date(today.getFullYear() + 1, 0, 1, 12, 0, 0);
+    const pastEvent = {
+      ...mockEventData[0],
+      name: 'Past Event',
+      allDay: true,
+      startDate: futureDate.toISOString(),
+      endDate: futureDate.toISOString(),
+    };
+
+    renderWithRouterAndPath(
+      <Calendar
+        eventData={[pastEvent]}
+        refetchEvents={mockRefetchEvents}
+        userRole={UserRole.ADMINISTRATOR}
+        userId="admin1"
+        orgData={mockOrgData}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('day').length).toBeGreaterThan(0);
+    });
+
+    // The event should not appear since it's in a different year
+    expect(screen.queryByText('Past Event')).not.toBeInTheDocument();
+  });
+
+  it('does not display events without valid date fields', async () => {
+    const invalidEvent = {
+      ...mockEventData[0],
+      name: 'Invalid Event',
+      allDay: false,
+      startAt: null,
+      endAt: null,
+      startDate: null,
+      endDate: null,
+    };
+
+    renderWithRouterAndPath(
+      <Calendar
+        eventData={[invalidEvent]}
+        refetchEvents={mockRefetchEvents}
+        userRole={UserRole.ADMINISTRATOR}
+        userId="admin1"
+        orgData={mockOrgData}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('day').length).toBeGreaterThan(0);
+    });
+
+    // The event should not appear since it has no valid date
+    expect(screen.queryByText('Invalid Event')).not.toBeInTheDocument();
+  });
+
+  it('prioritizes startDate for all-day events even if startAt is present', async () => {
+    const jan2 = new Date(today.getFullYear(), 0, 2, 12, 0, 0); // January 2, 2026
+    const feb2 = new Date(today.getFullYear(), 1, 2, 14, 30, 0); // February 2, 2026
+    const allDayEvent = {
+      ...mockEventData[0],
+      name: 'All Day Event',
+      allDay: true,
+      startDate: jan2.toISOString(),
+      endDate: jan2.toISOString(),
+      startAt: feb2.toISOString(), // Different date
+      endAt: feb2.toISOString(),
+    };
+
+    const { container } = renderWithRouterAndPath(
+      <Calendar
+        eventData={[allDayEvent]}
+        refetchEvents={mockRefetchEvents}
+        userRole={UserRole.ADMINISTRATOR}
+        userId="admin1"
+        orgData={mockOrgData}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('day').length).toBeGreaterThan(0);
+    });
+
+    await clickExpandForDate(container, jan2, user);
+
+    // The event should appear on January 2nd (startDate), not February 2nd (startAt)
+    expect(screen.getByText('All Day Event')).toBeInTheDocument();
   });
 });

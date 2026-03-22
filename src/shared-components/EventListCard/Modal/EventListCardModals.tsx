@@ -6,8 +6,6 @@
  * @param eventListCardProps - The properties of the event card, including event details and refetch function.
  * @param eventModalIsOpen - Boolean indicating whether the event modal is open.
  * @param hideViewModal - Function to hide the view modal.
- * @param t - Translation function for localized strings.
- * @param tCommon - Translation function for common localized strings.
  *
  * @returns JSX.Element - The rendered modals for event list card actions.
  *
@@ -47,6 +45,7 @@ import Button from 'shared-components/Button';
 import { FormCheckField } from 'shared-components/FormFieldGroup/FormCheckField';
 import styles from './EventListCardModals.module.css';
 import { useModalState } from 'shared-components/CRUDModalTemplate';
+import { useTranslation } from 'react-i18next';
 
 // Extend dayjs with utc plugin
 dayjs.extend(utc);
@@ -55,9 +54,9 @@ function EventListCardModals({
   eventListCardProps,
   eventModalIsOpen,
   hideViewModal,
-  t,
-  tCommon,
 }: InterfaceEventListCardModalsProps): JSX.Element {
+  const { t } = useTranslation('translation', { keyPrefix: 'eventListCard' });
+  const { t: tCommon } = useTranslation('common');
   const { refetchEvents } = eventListCardProps;
 
   const { getItem } = useLocalStorage();
@@ -65,6 +64,11 @@ function EventListCardModals({
 
   const { orgId } = useParams();
   const navigate = useNavigate();
+
+  const parseDateOnlyToLocalDate = (value: string): Date => {
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
 
   const [allDayChecked, setAllDayChecked] = useState(eventListCardProps.allDay);
   const [publicChecked, setPublicChecked] = useState(
@@ -90,10 +94,23 @@ function EventListCardModals({
     'single' | 'following' | 'entireSeries'
   >('single');
   const [eventStartDate, setEventStartDate] = useState(
-    new Date(eventListCardProps.startAt),
+    eventListCardProps.allDay && eventListCardProps.startDate
+      ? parseDateOnlyToLocalDate(eventListCardProps.startDate)
+      : eventListCardProps.startAt
+        ? new Date(eventListCardProps.startAt)
+        : new Date(),
   );
   const [eventEndDate, setEventEndDate] = useState(
-    new Date(eventListCardProps.endAt),
+    eventListCardProps.allDay && eventListCardProps.endDate
+      ? (() => {
+          // Subtract 1 day for RFC 5545 exclusive end date
+          const date = parseDateOnlyToLocalDate(eventListCardProps.endDate);
+          date.setDate(date.getDate() - 1);
+          return date;
+        })()
+      : eventListCardProps.endAt
+        ? new Date(eventListCardProps.endAt)
+        : new Date(),
   );
   // Initialize recurrence with default pattern for recurring events
   const [recurrence, setRecurrence] = useState<InterfaceRecurrenceRule | null>(
@@ -134,6 +151,50 @@ function EventListCardModals({
         : null,
     );
   }, [eventListCardProps.recurrenceRule]);
+
+  // Sync form state with props when event data changes (after refetch)
+  useEffect(() => {
+    setAllDayChecked(eventListCardProps.allDay);
+    setPublicChecked(eventListCardProps.isPublic);
+    setRegisterableChecked(eventListCardProps.isRegisterable);
+    setInviteOnlyChecked(Boolean(eventListCardProps.isInviteOnly));
+
+    // Update start date
+    const newStartDate =
+      eventListCardProps.allDay && eventListCardProps.startDate
+        ? parseDateOnlyToLocalDate(eventListCardProps.startDate)
+        : eventListCardProps.startAt
+          ? new Date(eventListCardProps.startAt)
+          : new Date();
+
+    setEventStartDate(newStartDate);
+
+    // Update end date
+    // For all-day events, subtract 1 day from endDate because it's stored as exclusive (RFC 5545)
+    // but displayed as inclusive to the user
+    const newEndDate =
+      eventListCardProps.allDay && eventListCardProps.endDate
+        ? (() => {
+            const date = parseDateOnlyToLocalDate(eventListCardProps.endDate);
+            date.setDate(date.getDate() - 1);
+            return date;
+          })()
+        : eventListCardProps.endAt
+          ? new Date(eventListCardProps.endAt)
+          : new Date();
+
+    setEventEndDate(newEndDate);
+  }, [
+    eventListCardProps.id,
+    eventListCardProps.allDay,
+    eventListCardProps.isPublic,
+    eventListCardProps.isRegisterable,
+    eventListCardProps.isInviteOnly,
+    eventListCardProps.startDate,
+    eventListCardProps.endDate,
+    eventListCardProps.startAt,
+    eventListCardProps.endAt,
+  ]);
 
   // Helper function to check if recurrence rule has changed
   const hasRecurrenceChanged = (): boolean => {
@@ -187,6 +248,7 @@ function EventListCardModals({
   const {
     isOpen: customRecurrenceModalIsOpen,
     open: openCustomRecurrenceModal,
+    close: closeCustomRecurrenceModal,
   } = useModalState();
 
   // Derive startTime/endTime from startAt/endAt when the API fields are absent.
@@ -200,11 +262,43 @@ function EventListCardModals({
     location: eventListCardProps.location,
     startTime:
       eventListCardProps.startTime?.split('.')[0] ||
-      deriveLocalTime(eventListCardProps.startAt),
+      (eventListCardProps.startAt
+        ? deriveLocalTime(eventListCardProps.startAt)
+        : '00:00:00'),
     endTime:
       eventListCardProps.endTime?.split('.')[0] ||
-      deriveLocalTime(eventListCardProps.endAt),
+      (eventListCardProps.endAt
+        ? deriveLocalTime(eventListCardProps.endAt)
+        : '23:59:59'),
   });
+
+  // Sync formState with props when event data changes (after refetch)
+  useEffect(() => {
+    setFormState({
+      name: eventListCardProps.name,
+      eventDescription: eventListCardProps.description,
+      location: eventListCardProps.location,
+      startTime:
+        eventListCardProps.startTime?.split('.')[0] ||
+        (eventListCardProps.startAt
+          ? deriveLocalTime(eventListCardProps.startAt)
+          : '00:00:00'),
+      endTime:
+        eventListCardProps.endTime?.split('.')[0] ||
+        (eventListCardProps.endAt
+          ? deriveLocalTime(eventListCardProps.endAt)
+          : '23:59:59'),
+    });
+  }, [
+    eventListCardProps.id,
+    eventListCardProps.name,
+    eventListCardProps.description,
+    eventListCardProps.location,
+    eventListCardProps.startTime,
+    eventListCardProps.endTime,
+    eventListCardProps.startAt,
+    eventListCardProps.endAt,
+  ]);
 
   // Automatically switch to "following" option when recurrence rule changes
   useEffect(() => {
@@ -270,7 +364,6 @@ function EventListCardModals({
         recurrence,
         updateOption,
         hasRecurrenceChanged: hasRecurrenceChanged(), // Pass the recurrence change status
-        t,
         hideViewModal,
         eventUpdateModalIsOpen,
         closeUpdateModal,
@@ -312,7 +405,12 @@ function EventListCardModals({
         });
         data = result.data;
       } else {
-        // Recurring instance - handle based on selected option
+        // Recurring instance - delete option is required
+        if (deleteOption === undefined) {
+          NotificationToast.error(t('deleteOptionRequired') as string);
+          return;
+        }
+        // Handle based on selected option
         switch (deleteOption) {
           case 'single': {
             const singleResult = await deleteSingleInstance({
@@ -352,14 +450,14 @@ function EventListCardModals({
 
       if (data) {
         NotificationToast.success(t('eventDeleted') as string);
+        if (refetchEvents) {
+          await refetchEvents();
+        }
         closeDeleteModal();
         hideViewModal();
-        if (refetchEvents) {
-          refetchEvents();
-        }
       }
     } catch (error: unknown) {
-      errorHandler(t, error);
+      errorHandler(tCommon, error);
     }
   };
 
@@ -390,7 +488,7 @@ function EventListCardModals({
           hideViewModal();
         }
       } catch (error: unknown) {
-        errorHandler(t, error);
+        errorHandler(tCommon, error);
       }
     }
   };
@@ -408,8 +506,6 @@ function EventListCardModals({
         eventModalIsOpen={eventModalIsOpen}
         hideViewModal={hideViewModal}
         toggleDeleteModal={toggleDeleteModal}
-        t={t}
-        tCommon={tCommon}
         isRegistered={isRegistered}
         userId={userId as string}
         eventStartDate={eventStartDate}
@@ -432,15 +528,21 @@ function EventListCardModals({
         recurrence={recurrence}
         setRecurrence={setRecurrence}
         customRecurrenceModalIsOpen={customRecurrenceModalIsOpen}
-        setCustomRecurrenceModalIsOpen={openCustomRecurrenceModal}
+        setCustomRecurrenceModalIsOpen={(state) => {
+          const next =
+            typeof state === 'function'
+              ? state(customRecurrenceModalIsOpen)
+              : state;
+          if (next) openCustomRecurrenceModal();
+          else closeCustomRecurrenceModal();
+        }}
+        hideCustomRecurrenceModal={closeCustomRecurrenceModal}
       />
 
       <EventListCardDeleteModal
         eventListCardProps={eventListCardProps}
         eventDeleteModalIsOpen={eventDeleteModalIsOpen}
         toggleDeleteModal={toggleDeleteModal}
-        t={t}
-        tCommon={tCommon}
         deleteEventHandler={deleteEventHandler}
       />
 
@@ -481,7 +583,6 @@ function EventListCardModals({
                   recurrence,
                   updateOption,
                   hasRecurrenceChanged: hasRecurrenceChanged(),
-                  t,
                   hideViewModal,
                   eventUpdateModalIsOpen,
                   closeUpdateModal,

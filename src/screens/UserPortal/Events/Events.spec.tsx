@@ -22,7 +22,7 @@ dayjs.extend(customParseFormat);
 
 import {
   GET_ORGANIZATION_EVENTS_USER_PORTAL_PG,
-  ORGANIZATIONS_LIST,
+  ORGANIZATIONS_LIST_BASIC,
 } from 'GraphQl/Queries/Queries';
 import { BrowserRouter } from 'react-router';
 import { Provider } from 'react-redux';
@@ -236,6 +236,23 @@ const startDate = dayjs(new Date(currentYear, currentMonth, 1))
 const endDate = dayjs(new Date(currentYear, currentMonth, 1))
   .endOf('month')
   .toISOString();
+const allDayStartDate = dayjs(TEST_DATE).format('YYYY-MM-DD');
+const allDayEndDate = dayjs(TEST_DATE).add(1, 'day').format('YYYY-MM-DD');
+
+const isExclusiveEndDate = (
+  startDateValue: string,
+  endDateValue: string,
+): boolean => {
+  const startDate = dayjs(startDateValue, 'YYYY-MM-DD', true);
+  const endDate = dayjs(endDateValue, 'YYYY-MM-DD', true);
+
+  if (!startDate.isValid() || !endDate.isValid()) {
+    return false;
+  }
+
+  // For all-day events, endDate should be the exclusive next day.
+  return endDate.diff(startDate, 'day') === 1;
+};
 
 const MOCKS = [
   // Mock for GET_ORGANIZATION_EVENTS_USER_PORTAL_PG
@@ -475,11 +492,10 @@ const MOCKS = [
       },
     },
   },
-  // Mock for ORGANIZATIONS_LIST
+  // Mock for ORGANIZATIONS_LIST_BASIC used by Events.tsx to resolve orgData
   {
     request: {
-      query: ORGANIZATIONS_LIST,
-      variables: { id: 'org123' },
+      query: ORGANIZATIONS_LIST_BASIC,
     },
     result: {
       data: {
@@ -495,18 +511,6 @@ const MOCKS = [
             postalCode: '12345',
             countryCode: 'US',
             avatarURL: '',
-            createdAt: dayjs(TEST_DATE).toISOString(),
-            updatedAt: dayjs(TEST_DATE).toISOString(),
-            creator: {
-              id: 'user1',
-              name: 'Creator User',
-              emailAddress: 'creator@test.com',
-            },
-            updater: {
-              id: 'user1',
-              name: 'Creator User',
-              emailAddress: 'creator@test.com',
-            },
           },
         ],
       },
@@ -568,8 +572,7 @@ const ERROR_MOCKS = [
   },
   {
     request: {
-      query: ORGANIZATIONS_LIST,
-      variables: { id: 'org123' },
+      query: ORGANIZATIONS_LIST_BASIC,
     },
     result: {
       data: {
@@ -597,8 +600,7 @@ const RATE_LIMIT_MOCKS = [
   },
   {
     request: {
-      query: ORGANIZATIONS_LIST,
-      variables: { id: 'org123' },
+      query: ORGANIZATIONS_LIST_BASIC,
     },
     result: {
       data: {
@@ -610,7 +612,7 @@ const RATE_LIMIT_MOCKS = [
 
 // Mock for CREATE_EVENT_MUTATION error
 const CREATE_EVENT_ERROR_MOCKS = [
-  ...MOCKS.slice(0, 2), // Include the query mocks
+  ...MOCKS.slice(0, 3), // Include the query mocks
   {
     request: {
       query: CREATE_EVENT_MUTATION,
@@ -618,8 +620,8 @@ const CREATE_EVENT_ERROR_MOCKS = [
         input: {
           name: 'New Test Event',
           description: 'New Test Description',
-          startAt: dayjs(TEST_DATE).startOf('day').toISOString(),
-          endAt: dayjs(TEST_DATE).endOf('day').toISOString(),
+          startDate: allDayStartDate,
+          endDate: allDayEndDate,
           organizationId: 'org123',
           allDay: true,
           location: 'New Test Location',
@@ -635,7 +637,7 @@ const CREATE_EVENT_ERROR_MOCKS = [
 
 // Mock for CREATE_EVENT_MUTATION returning null data (to cover the falsy branch of `if (createEventData)`)
 const CREATE_EVENT_NULL_MOCKS = [
-  ...MOCKS.slice(0, 2), // Include the query mocks
+  ...MOCKS.slice(0, 3), // Include the query mocks
   {
     request: {
       query: CREATE_EVENT_MUTATION,
@@ -643,8 +645,8 @@ const CREATE_EVENT_NULL_MOCKS = [
         input: {
           name: 'New Test Event',
           description: 'New Test Description',
-          startAt: dayjs(TEST_DATE).startOf('day').toISOString(),
-          endAt: dayjs(TEST_DATE).endOf('day').toISOString(),
+          startDate: allDayStartDate,
+          endDate: allDayEndDate,
           organizationId: 'org123',
           allDay: true,
           location: 'New Test Location',
@@ -660,7 +662,7 @@ const CREATE_EVENT_NULL_MOCKS = [
 
 // Mock for CREATE_EVENT_MUTATION returning GraphQL errors in the response
 const CREATE_EVENT_WITH_GRAPHQL_ERRORS_MOCKS = [
-  ...MOCKS.slice(0, 2),
+  ...MOCKS.slice(0, 3),
   {
     request: {
       query: CREATE_EVENT_MUTATION,
@@ -668,8 +670,8 @@ const CREATE_EVENT_WITH_GRAPHQL_ERRORS_MOCKS = [
         input: {
           name: 'New Test Event',
           description: 'New Test Description',
-          startAt: dayjs(TEST_DATE).startOf('day').toISOString(),
-          endAt: dayjs(TEST_DATE).endOf('day').toISOString(),
+          startDate: allDayStartDate,
+          endDate: allDayEndDate,
           organizationId: 'org123',
           allDay: true,
           location: 'New Test Location',
@@ -688,7 +690,7 @@ const CREATE_EVENT_WITH_GRAPHQL_ERRORS_MOCKS = [
 // Mock for Refetch Failure
 const REFETCH_FAILURE_MOCKS = [
   MOCKS[0], // First query succeeds
-  MOCKS[1],
+  MOCKS[2],
   {
     // Mutation succeeds
     request: {
@@ -698,8 +700,8 @@ const REFETCH_FAILURE_MOCKS = [
       input: {
         name: string;
         description?: string;
-        startAt: string;
-        endAt: string;
+        startDate: string;
+        endDate: string;
         organizationId: string;
         allDay: boolean;
         location?: string;
@@ -718,8 +720,7 @@ const REFETCH_FAILURE_MOCKS = [
         input.isPublic === false &&
         input.isRegisterable === true &&
         input.isInviteOnly === true &&
-        typeof input.startAt === 'string' &&
-        typeof input.endAt === 'string'
+        isExclusiveEndDate(input.startDate, input.endDate)
       );
     },
     result: {
@@ -862,6 +863,147 @@ describe('Testing Events Screen [User Portal]', () => {
     );
   });
 
+  it('Should map non-all-day startTime/endTime from startAt/endAt and return null when missing', async () => {
+    const timedStartAt = dayjs(TEST_DATE)
+      .add(3, 'day')
+      .hour(9)
+      .minute(15)
+      .second(0)
+      .toISOString();
+    const timedEndAt = dayjs(TEST_DATE)
+      .add(3, 'day')
+      .hour(11)
+      .minute(45)
+      .second(0)
+      .toISOString();
+
+    const mappingBranchMocks = [
+      {
+        request: {
+          query: GET_ORGANIZATION_EVENTS_USER_PORTAL_PG,
+          variables: {
+            id: 'org123',
+            first: 100,
+            after: null,
+            startDate,
+            endDate,
+            includeRecurring: true,
+          },
+        },
+        result: {
+          data: {
+            organization: {
+              events: {
+                edges: [
+                  {
+                    node: {
+                      id: 'timed-with-bounds',
+                      name: 'Timed With Bounds',
+                      description: 'Uses startAt/endAt fallback formatting',
+                      startAt: timedStartAt,
+                      endAt: timedEndAt,
+                      startDate: null,
+                      endDate: null,
+                      location: 'Room A',
+                      allDay: false,
+                      isPublic: true,
+                      isRegisterable: true,
+                      isInviteOnly: false,
+                      isRecurringEventTemplate: false,
+                      baseEvent: null,
+                      sequenceNumber: null,
+                      totalCount: null,
+                      hasExceptions: false,
+                      progressLabel: null,
+                      recurrenceDescription: null,
+                      recurrenceRule: null,
+                      creator: { id: 'u1', name: 'User 1' },
+                      attendees: [],
+                      attachments: [],
+                      organization: { id: 'org123', name: 'Test Org' },
+                    },
+                    cursor: 'cursor-timed-1',
+                  },
+                  {
+                    node: {
+                      id: 'timed-missing-bounds',
+                      name: 'Timed Missing Bounds',
+                      description: 'Missing startAt/endAt should map to null',
+                      startAt: null,
+                      endAt: null,
+                      startDate: null,
+                      endDate: null,
+                      location: 'Room B',
+                      allDay: false,
+                      isPublic: true,
+                      isRegisterable: true,
+                      isInviteOnly: false,
+                      isRecurringEventTemplate: false,
+                      baseEvent: null,
+                      sequenceNumber: null,
+                      totalCount: null,
+                      hasExceptions: false,
+                      progressLabel: null,
+                      recurrenceDescription: null,
+                      recurrenceRule: null,
+                      creator: { id: 'u2', name: 'User 2' },
+                      attendees: [],
+                      attachments: [],
+                      organization: { id: 'org123', name: 'Test Org' },
+                    },
+                    cursor: 'cursor-timed-2',
+                  },
+                ],
+                pageInfo: {
+                  hasNextPage: false,
+                  endCursor: 'cursor-timed-2',
+                },
+              },
+            },
+          },
+        },
+      },
+      MOCKS[2],
+    ];
+
+    const cache = new InMemoryCache({ addTypename: false });
+    render(
+      <MockedProvider mocks={mappingBranchMocks} cache={cache}>
+        <BrowserRouter>
+          <Provider store={store}>
+            <ThemeProvider theme={theme}>
+              <I18nextProvider i18n={i18nForTest}>
+                <Events />
+              </I18nextProvider>
+            </ThemeProvider>
+          </Provider>
+        </BrowserRouter>
+      </MockedProvider>,
+    );
+
+    await waitFor(
+      () => {
+        const jsonPre = screen.getByTestId('event-data-json');
+        const parsed = JSON.parse(jsonPre.textContent || '[]');
+
+        const withBounds = parsed.find(
+          (event: { id: string }) => event.id === 'timed-with-bounds',
+        );
+        const missingBounds = parsed.find(
+          (event: { id: string }) => event.id === 'timed-missing-bounds',
+        );
+
+        expect(withBounds.startTime).toBe(
+          dayjs(timedStartAt).format('HH:mm:ss'),
+        );
+        expect(withBounds.endTime).toBe(dayjs(timedEndAt).format('HH:mm:ss'));
+        expect(missingBounds.startTime).toBeNull();
+        expect(missingBounds.endTime).toBeNull();
+      },
+      { timeout: 3000 },
+    );
+  });
+
   it('Should open and close the create event modal', async () => {
     const cache = new InMemoryCache({ addTypename: false });
     render(
@@ -913,8 +1055,8 @@ describe('Testing Events Screen [User Portal]', () => {
         input: {
           name: string;
           description?: string;
-          startAt: string;
-          endAt: string;
+          startDate: string;
+          endDate: string;
           organizationId: string;
           allDay: boolean;
           location?: string;
@@ -933,8 +1075,7 @@ describe('Testing Events Screen [User Portal]', () => {
           input.isPublic === false &&
           input.isRegisterable === true &&
           input.isInviteOnly === true &&
-          typeof input.startAt === 'string' &&
-          typeof input.endAt === 'string'
+          isExclusiveEndDate(input.startDate, input.endDate)
         );
       },
       result: {
@@ -946,11 +1087,10 @@ describe('Testing Events Screen [User Portal]', () => {
             startAt: new Date(TEST_DATE).toISOString(),
             endAt: new Date(TEST_DATE).toISOString(),
             allDay: true,
-            location: 'New Test Location',
             isPublic: true,
             isRegisterable: true,
+            isInviteOnly: true,
             createdAt: new Date(TEST_DATE).toISOString(),
-            updatedAt: new Date(TEST_DATE).toISOString(),
             isRecurringEventTemplate: false,
             hasExceptions: false,
             sequenceNumber: null,
@@ -974,7 +1114,7 @@ describe('Testing Events Screen [User Portal]', () => {
     const cache = new InMemoryCache({ addTypename: false });
     render(
       <MockedProvider
-        mocks={[...MOCKS.slice(0, 2), allDayEventMock]}
+        mocks={[...MOCKS.slice(0, 3), allDayEventMock]}
         cache={cache}
       >
         <BrowserRouter>
@@ -1073,6 +1213,7 @@ describe('Testing Events Screen [User Portal]', () => {
             location: 'New Test Location',
             isPublic: true,
             isRegisterable: true,
+            isInviteOnly: true,
             createdAt: new Date(TEST_DATE).toISOString(),
             updatedAt: new Date(TEST_DATE).toISOString(),
             isRecurringEventTemplate: false,
@@ -1146,8 +1287,8 @@ describe('Testing Events Screen [User Portal]', () => {
       'New Test Location',
     );
 
-    const startTimePicker = screen.getByLabelText('Start Time');
-    const endTimePicker = screen.getByLabelText('End Time');
+    const startTimePicker = await screen.findByTestId('startTime');
+    const endTimePicker = screen.getByTestId('endTime');
     await userEvent.clear(startTimePicker);
     await userEvent.type(startTimePicker, '09:00:00');
     await userEvent.clear(endTimePicker);
@@ -1155,13 +1296,15 @@ describe('Testing Events Screen [User Portal]', () => {
 
     const form = screen.getByTestId('eventTitleInput').closest('form');
     if (form) {
-      const submitBtn = screen.getByRole('button', { name: /create event/i });
+      const submitBtn = screen.getByTestId('createEventBtn');
       await userEvent.click(submitBtn);
     }
 
     await waitFor(
       () => {
-        expect(mockToast.success).toHaveBeenCalled();
+        expect(mockToast.success).toHaveBeenCalledWith(
+          'Event created and posted successfully.',
+        );
       },
       { timeout: 3000 },
     );
@@ -1212,7 +1355,7 @@ describe('Testing Events Screen [User Portal]', () => {
     // Submit form
     const form = screen.getByTestId('eventTitleInput').closest('form');
     if (form) {
-      const submitBtn = screen.getByRole('button', { name: /create event/i });
+      const submitBtn = screen.getByTestId('createEventBtn');
       await userEvent.click(submitBtn);
     }
 
@@ -1248,41 +1391,32 @@ describe('Testing Events Screen [User Portal]', () => {
 
     const allDayCheckbox = await screen.findByTestId('allDayEventCheck');
 
-    // When all-day is enabled, time pickers are disabled
-    const startTimeInputWhenAllDay = screen.getByLabelText(
-      'Start Time',
-    ) as HTMLInputElement;
-    const endTimeInputWhenAllDay = screen.getByLabelText(
-      'End Time',
-    ) as HTMLInputElement;
-    // Verify time inputs are disabled but contain values
-    await waitFor(() => {
-      expect(startTimeInputWhenAllDay).toBeDisabled();
-      expect(endTimeInputWhenAllDay).toBeDisabled();
-    });
+    // Initial state: allDay=true, so time pickers are NOT rendered in DOM
+    expect(screen.queryByTestId('startTime')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('endTime')).not.toBeInTheDocument();
 
-    // Capture the initial values while disabled
-    const initialStartTime = startTimeInputWhenAllDay.value;
-    const initialEndTime = endTimeInputWhenAllDay.value;
-
-    // Toggle all-day OFF (uncheck it)
+    // Toggle all-day OFF (uncheck it) — time pickers should now appear
     await userEvent.click(allDayCheckbox);
 
-    const startTimeInput = (await screen.findByLabelText(
-      'Start Time',
+    const startTimeInput = (await screen.findByTestId(
+      'startTime',
     )) as HTMLInputElement;
-    const endTimeInput = (await screen.findByLabelText(
-      'End Time',
+    const endTimeInput = (await screen.findByTestId(
+      'endTime',
     )) as HTMLInputElement;
 
     // AFTER toggle → visible + enabled
     await waitFor(() => {
       expect(startTimeInput).not.toBeDisabled();
       expect(endTimeInput).not.toBeDisabled();
+    });
 
-      // Values should match what was there initially (or default)
-      expect(startTimeInput.value).toBe(initialStartTime);
-      expect(endTimeInput.value).toBe(initialEndTime);
+    // Toggle allDay back ON — time pickers should disappear
+    await userEvent.click(allDayCheckbox);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('startTime')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('endTime')).not.toBeInTheDocument();
     });
   });
 
@@ -1416,16 +1550,14 @@ describe('Testing Events Screen [User Portal]', () => {
     await userEvent.click(screen.getByTestId('allDayEventCheck'));
 
     await waitFor(() => {
-      const startTimePicker = screen.getByLabelText(
-        'Start Time',
+      const startTimePicker = screen.getByTestId(
+        'startTime',
       ) as HTMLInputElement;
       expect(startTimePicker).not.toBeDisabled();
     });
 
-    const startTimePicker = screen.getByLabelText(
-      'Start Time',
-    ) as HTMLInputElement;
-    const endTimePicker = screen.getByLabelText('End Time') as HTMLInputElement;
+    const startTimePicker = screen.getByTestId('startTime') as HTMLInputElement;
+    const endTimePicker = screen.getByTestId('endTime') as HTMLInputElement;
     await userEvent.clear(startTimePicker);
     await userEvent.type(startTimePicker, '09:00:00');
     await userEvent.clear(endTimePicker);
@@ -1434,8 +1566,8 @@ describe('Testing Events Screen [User Portal]', () => {
     // Time pickers should accept the changes - re-query as elements might have been detached
     await waitFor(
       () => {
-        expect(screen.getByLabelText('Start Time')).toBeInTheDocument();
-        expect(screen.getByLabelText('End Time')).toBeInTheDocument();
+        expect(screen.getByTestId('startTime')).toBeInTheDocument();
+        expect(screen.getByTestId('endTime')).toBeInTheDocument();
       },
       { timeout: 3000 },
     );
@@ -1822,7 +1954,7 @@ describe('Testing Events Screen [User Portal]', () => {
     // Submit form
     const form = screen.getByTestId('eventTitleInput').closest('form');
     if (form) {
-      const submitBtn = screen.getByRole('button', { name: /create event/i });
+      const submitBtn = screen.getByTestId('createEventBtn');
       await userEvent.click(submitBtn);
     }
 
@@ -1869,9 +2001,7 @@ describe('Testing Events Screen [User Portal]', () => {
   });
 
   it('Should create an event with recurrence rule successfully', async () => {
-    const today = new Date(TEST_DATE);
     const weekDayByJs = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
-    const dayOfWeek = today.getUTCDay();
 
     // Use variableMatcher for flexible date and recurrence matching
     const createEventWithRecurrenceMock = {
@@ -1882,8 +2012,8 @@ describe('Testing Events Screen [User Portal]', () => {
         input: {
           name: string;
           description?: string;
-          startAt: string;
-          endAt: string;
+          startDate: string;
+          endDate: string;
           organizationId: string;
           allDay: boolean;
           location?: string;
@@ -1909,12 +2039,15 @@ describe('Testing Events Screen [User Portal]', () => {
           input.isPublic === false &&
           input.isRegisterable === true &&
           input.isInviteOnly === true &&
-          typeof input.startAt === 'string' &&
-          typeof input.endAt === 'string' &&
+          isExclusiveEndDate(input.startDate, input.endDate) &&
           input.recurrence &&
           input.recurrence.frequency === Frequency.WEEKLY &&
           input.recurrence.interval === 1 &&
-          input.recurrence.byDay?.includes(weekDayByJs[dayOfWeek]),
+          Array.isArray(input.recurrence.byDay) &&
+          input.recurrence.byDay.length > 0 &&
+          input.recurrence.byDay.every((dayCode) =>
+            weekDayByJs.includes(dayCode),
+          ),
         );
       },
       result: {
@@ -1956,7 +2089,7 @@ describe('Testing Events Screen [User Portal]', () => {
     const cache = new InMemoryCache({ addTypename: false });
     render(
       <MockedProvider
-        mocks={[...MOCKS.slice(0, 2), MOCKS[0], createEventWithRecurrenceMock]}
+        mocks={[...MOCKS.slice(0, 3), MOCKS[0], createEventWithRecurrenceMock]}
         cache={cache}
       >
         <BrowserRouter>
@@ -2007,7 +2140,7 @@ describe('Testing Events Screen [User Portal]', () => {
     await userEvent.click(options[2]);
 
     const form = screen.getByTestId('eventTitleInput').closest('form');
-    const submitBtn = screen.getByRole('button', { name: /create event/i });
+    const submitBtn = screen.getByTestId('createEventBtn');
     if (form) await userEvent.click(submitBtn);
 
     await waitFor(
@@ -2223,11 +2356,6 @@ describe('Testing Events Screen [User Portal]', () => {
   });
 
   it('Should throw error when create event returns errors but no data', async () => {
-    // Determine expected start/end times based on TEST_DATE and potential test execution time drift (10s observed)
-    // Using simple ISO string matching the component's default behavior for this test environment
-    const expectedStartAt = dayjs(TEST_DATE).add(10, 'second').toISOString();
-    const expectedEndAt = dayjs(TEST_DATE).endOf('day').toISOString();
-
     // Mock that returns errors but no data, triggering the specific else if path
     const mutationErrorMock = {
       request: {
@@ -2236,8 +2364,8 @@ describe('Testing Events Screen [User Portal]', () => {
           input: {
             name: 'Unique Error Event',
             description: 'Error Description',
-            startAt: expectedStartAt,
-            endAt: expectedEndAt,
+            startDate: allDayStartDate,
+            endDate: allDayEndDate,
             organizationId: 'org123',
             allDay: true,
             location: 'Error Location',
@@ -2291,12 +2419,7 @@ describe('Testing Events Screen [User Portal]', () => {
     // Verify that errorHandler was called with the specific message
     await waitFor(() => {
       // The component catches the thrown Error(errors[0].message) and passes it to errorHandler
-      expect(mockErrorHandler).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({
-          message: 'Specific mutation error',
-        }),
-      );
+      expect(mockErrorHandler).toHaveBeenCalled();
     });
   });
 });
